@@ -7,26 +7,61 @@ import android.os.SystemClock
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.appcompat.content.res.AppCompatResources
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.tungsten.fcl.R
 import com.tungsten.fcl.activity.SplashActivity
-import com.tungsten.fcl.databinding.FragmentRuntimeBinding
 import com.tungsten.fcl.util.RuntimeUtils
 import com.tungsten.fclauncher.utils.Architecture
 import com.tungsten.fclauncher.utils.FCLPath
 import com.tungsten.fcllibrary.component.FCLFragment
 import com.tungsten.fcllibrary.component.dialog.FCLAlertDialog
-import com.tungsten.fcllibrary.component.theme.ThemeEngine
-import com.tungsten.fcllibrary.component.view.FCLImageView
-import com.tungsten.fcllibrary.component.view.FCLProgressBar
-import com.tungsten.fcllibrary.component.view.FCLTextView
+import com.tungsten.fcllibrary.component.theme.FCLComposeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class RuntimeFragment : FCLFragment(), View.OnClickListener {
-    private lateinit var bind: FragmentRuntimeBinding
+private data class RuntimeRow(
+    val key: String,
+    val label: Int,
+    val installed: Boolean,
+    val installing: Boolean = false,
+    val detail: String? = null
+)
+
+class RuntimeFragment : FCLFragment() {
+    private val runtimeRows = mutableStateListOf<RuntimeRow>()
+
     var lwjgl = false
     var cacio = false
     var cacio17 = false
@@ -36,20 +71,27 @@ class RuntimeFragment : FCLFragment(), View.OnClickListener {
     var java21 = false
     var jna = false
 
+    private var installing = false
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
-    ): View? {
-        val view = inflater.inflate(R.layout.fragment_runtime, container, false)
-        bind = FragmentRuntimeBinding.bind(view)
-        bind.install.setOnClickListener(this)
+    ): View {
+        val composeView = ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+            setContent {
+                FCLComposeTheme {
+                    RuntimeContent(runtimeRows, ::onInstallClick)
+                }
+            }
+        }
         lifecycleScope.launch {
             withContext(Dispatchers.IO) { initState() }
-            refreshDrawables()
+            refreshRows()
             check()
         }
-        return view
+        return composeView
     }
 
     private fun initState() {
@@ -63,27 +105,30 @@ class RuntimeFragment : FCLFragment(), View.OnClickListener {
         jna = (activity as SplashActivity).jna
     }
 
-    private fun refreshDrawables() {
-        if (context != null) {
-            val stateUpdate =
-                AppCompatResources.getDrawable(requireContext(), R.drawable.ic_baseline_update_24)
-            val stateDone =
-                AppCompatResources.getDrawable(requireContext(), R.drawable.ic_baseline_done_24)
-
-            stateUpdate?.setTint(ThemeEngine.getTheme().getColor2())
-            stateDone?.setTint(ThemeEngine.getTheme().getColor2())
-
-            bind.apply {
-                lwjglState.setBackgroundDrawable(if (lwjgl) stateDone else stateUpdate)
-                cacioState.setBackgroundDrawable(if (cacio) stateDone else stateUpdate)
-                cacio17State.setBackgroundDrawable(if (cacio17) stateDone else stateUpdate)
-                java8State.setBackgroundDrawable(if (java8) stateDone else stateUpdate)
-                java17State.setBackgroundDrawable(if (java17) stateDone else stateUpdate)
-                java21State.setBackgroundDrawable(if (java21) stateDone else stateUpdate)
-                java25State.setBackgroundDrawable(if (java25) stateDone else stateUpdate)
-                jnaState.setBackgroundDrawable(if (jna) stateDone else stateUpdate)
+    private fun refreshRows() {
+        val currentRows = listOf(
+            RuntimeRow("lwjgl", R.string.splash_runtime_lwjgl, lwjgl),
+            RuntimeRow("cacio", R.string.splash_runtime_cacio, cacio),
+            RuntimeRow("cacio17", R.string.splash_runtime_cacio17, cacio17),
+            RuntimeRow("java8", R.string.splash_runtime_java8, java8),
+            RuntimeRow("java17", R.string.splash_runtime_java17, java17),
+            RuntimeRow("java21", R.string.splash_runtime_java21, java21),
+            RuntimeRow("java25", R.string.splash_runtime_java25, java25),
+            RuntimeRow("jna", R.string.splash_runtime_jna, jna)
+        )
+        if (runtimeRows.isEmpty()) {
+            runtimeRows.addAll(currentRows)
+        } else {
+            currentRows.forEach { current ->
+                val index = runtimeRows.indexOfFirst { it.key == current.key }
+                if (index >= 0) runtimeRows[index] = runtimeRows[index].copy(installed = current.installed)
             }
         }
+    }
+
+    private fun updateRow(key: String, update: (RuntimeRow) -> RuntimeRow) {
+        val index = runtimeRows.indexOfFirst { it.key == key }
+        if (index >= 0) runtimeRows[index] = update(runtimeRows[index])
     }
 
     private val isLatest: Boolean
@@ -96,121 +141,67 @@ class RuntimeFragment : FCLFragment(), View.OnClickListener {
         }
     }
 
-    private var installing = false
-
     private fun install() {
         if (installing) return
-
         installing = true
-        bind.apply {
-            if (!lwjgl) {
-                launchInstall(lwjglState, lwjglProgress, lwjglDetail, { lwjgl = true }) {
-                    RuntimeUtils.install(context, FCLPath.LWJGL_DIR, "app_runtime/lwjgl", it)
-                }
-            }
-            if (!cacio) {
-                launchInstall(cacioState, cacioProgress, cacioDetail, { cacio = true }) {
-                    RuntimeUtils.install(
-                        context,
-                        FCLPath.CACIOCAVALLO_8_DIR,
-                        "app_runtime/caciocavallo",
-                        it
-                    )
-                }
-            }
-            if (!cacio17) {
-                launchInstall(cacio17State, cacio17Progress, cacio17Detail, { cacio17 = true }) {
-                    RuntimeUtils.install(
-                        context,
-                        FCLPath.CACIOCAVALLO_17_DIR,
-                        "app_runtime/caciocavallo17",
-                        it
-                    )
-                }
-            }
-            if (!java8) {
-                launchInstall(java8State, java8Progress, java8Detail, { java8 = true }) {
-                    RuntimeUtils.installJava(context, FCLPath.JAVA_8_PATH, "app_runtime/java/jre8", it)
-                }
-            }
-            if (!java17) {
-                launchInstall(java17State, java17Progress, java17Detail, { java17 = true }) {
-                    RuntimeUtils.installJava(
-                        context,
-                        FCLPath.JAVA_17_PATH,
-                        "app_runtime/java/jre17",
-                        it
-                    )
-                }
-            }
-            if (!java21) {
-                launchInstall(java21State, java21Progress, java21Detail, { java21 = true }) {
-                    RuntimeUtils.installJava(
-                        context,
-                        FCLPath.JAVA_21_PATH,
-                        "app_runtime/java/jre21",
-                        it
-                    )
-                }
-            }
-            if (!java25) {
-                launchInstall(java25State, java25Progress, java25Detail, { java25 = true }) {
-                    RuntimeUtils.installJava(
-                        context,
-                        FCLPath.JAVA_25_PATH,
-                        "app_runtime/java/jre25",
-                        it
-                    )
-                }
-            }
-            if (!jna) {
-                launchInstall(jnaState, jnaProgress, jnaDetail, { jna = true }) {
-                    RuntimeUtils.installJna(context, FCLPath.JNA_PATH, "app_runtime/jna", it)
-                }
-            }
+
+        if (!lwjgl) launchInstall("lwjgl", { lwjgl = true }) {
+            RuntimeUtils.install(context, FCLPath.LWJGL_DIR, "app_runtime/lwjgl", it)
+        }
+        if (!cacio) launchInstall("cacio", { cacio = true }) {
+            RuntimeUtils.install(context, FCLPath.CACIOCAVALLO_8_DIR, "app_runtime/caciocavallo", it)
+        }
+        if (!cacio17) launchInstall("cacio17", { cacio17 = true }) {
+            RuntimeUtils.install(context, FCLPath.CACIOCAVALLO_17_DIR, "app_runtime/caciocavallo17", it)
+        }
+        if (!java8) launchInstall("java8", { java8 = true }) {
+            RuntimeUtils.installJava(context, FCLPath.JAVA_8_PATH, "app_runtime/java/jre8", it)
+        }
+        if (!java17) launchInstall("java17", { java17 = true }) {
+            RuntimeUtils.installJava(context, FCLPath.JAVA_17_PATH, "app_runtime/java/jre17", it)
+        }
+        if (!java21) launchInstall("java21", { java21 = true }) {
+            RuntimeUtils.installJava(context, FCLPath.JAVA_21_PATH, "app_runtime/java/jre21", it)
+        }
+        if (!java25) launchInstall("java25", { java25 = true }) {
+            RuntimeUtils.installJava(context, FCLPath.JAVA_25_PATH, "app_runtime/java/jre25", it)
+        }
+        if (!jna) launchInstall("jna", { jna = true }) {
+            RuntimeUtils.installJna(context, FCLPath.JNA_PATH, "app_runtime/jna", it)
         }
     }
 
     private fun launchInstall(
-        state: FCLImageView,
-        progress: FCLProgressBar,
-        detail: FCLTextView,
+        key: String,
         markDone: () -> Unit,
         block: (RuntimeUtils.InstallListener) -> Unit
     ) {
-        val listener = createListener(detail)
-        state.visibility = View.GONE
-        progress.visibility = View.VISIBLE
+        updateRow(key) { it.copy(installing = true, detail = null) }
+        val listener = createListener(key)
         lifecycleScope.launch {
             val error = withContext(Dispatchers.IO) {
                 runCatching { block(listener) }.exceptionOrNull()
             }
-            state.visibility = View.VISIBLE
-            progress.visibility = View.GONE
-            detail.visibility = View.GONE
+            updateRow(key) { it.copy(installing = false, detail = null) }
             if (error != null) {
                 showErrorDialog(error.toString())
             } else {
                 markDone()
             }
-            refreshDrawables()
+            refreshRows()
             check()
         }
     }
 
-    private fun createListener(detail: FCLTextView): RuntimeUtils.InstallListener {
+    private fun createListener(key: String): RuntimeUtils.InstallListener {
         val mainHandler = Handler(Looper.getMainLooper())
         var lastUpdateTime = 0L
         fun post(text: String, force: Boolean = false) {
             val now = SystemClock.elapsedRealtime()
-            // 节流，避免解压大量小文件时刷爆主线程消息队列；阶段文案不节流
             if (!force && now - lastUpdateTime < DETAIL_UPDATE_INTERVAL_MS) return
             lastUpdateTime = now
             mainHandler.post {
-                if (isAdded) {
-                    detail.text = text
-                    detail.visibility = View.VISIBLE
-                }
+                if (isAdded) updateRow(key) { it.copy(detail = text) }
             }
         }
         return object : RuntimeUtils.InstallListener {
@@ -224,22 +215,20 @@ class RuntimeFragment : FCLFragment(), View.OnClickListener {
         }
     }
 
-    override fun onClick(view: View) {
-        if (view === bind.install) {
-            val deviceArch = Architecture.archAsString(Architecture.getDeviceArchitecture())
-            if (!isJavaArchSupported(deviceArch)) {
-                showErrorDialog(
-                    getString(
-                        R.string.missing_runtime_arch_files,
-                        deviceArch,
-                        "FCL-release-x.x.x.x-$deviceArch.apk",
-                        "FCL-release-x.x.x.x-all.apk"
-                    )
+    private fun onInstallClick() {
+        val deviceArch = Architecture.archAsString(Architecture.getDeviceArchitecture())
+        if (!isJavaArchSupported(deviceArch)) {
+            showErrorDialog(
+                getString(
+                    R.string.missing_runtime_arch_files,
+                    deviceArch,
+                    "FCL-release-x.x.x.x-$deviceArch.apk",
+                    "FCL-release-x.x.x.x-all.apk"
                 )
-                return
-            }
-            install()
+            )
+            return
         }
+        install()
     }
 
     private fun isJavaArchSupported(arch: String): Boolean {
@@ -250,12 +239,7 @@ class RuntimeFragment : FCLFragment(), View.OnClickListener {
             for (javaDir in javaDirs) {
                 val dirPath = "app_runtime/java/$javaDir"
                 val files = assetManager.list(dirPath)
-                if (files != null) {
-                    val expectedFile = "bin-$arch.tar.xz"
-                    if (files.contains(expectedFile)) {
-                        supportedCount++
-                    }
-                }
+                if (files != null && files.contains("bin-$arch.tar.xz")) supportedCount++
             }
             return supportedCount > 0
         } catch (e: Exception) {
@@ -269,8 +253,7 @@ class RuntimeFragment : FCLFragment(), View.OnClickListener {
         lifecycleScope.launch(Dispatchers.Main) {
             FCLAlertDialog.Builder(requireContext())
                 .setMessage(message)
-                .setPositiveButton {
-                }
+                .setPositiveButton { }
                 .create()
                 .show()
         }
@@ -278,5 +261,79 @@ class RuntimeFragment : FCLFragment(), View.OnClickListener {
 
     companion object {
         private const val DETAIL_UPDATE_INTERVAL_MS = 50L
+    }
+}
+
+@Composable
+private fun RuntimeContent(rows: List<RuntimeRow>, onInstall: () -> Unit) {
+    val context = LocalContext.current
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.fillMaxSize()) {
+            Text(
+                text = stringResource(R.string.splash_title),
+                modifier = Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.primary)
+                    .padding(10.dp),
+                color = MaterialTheme.colorScheme.onPrimary,
+                style = MaterialTheme.typography.titleLarge
+            )
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(Modifier.weight(0.7f).fillMaxHeight()) {
+                    items(rows, key = { it.key }) { row ->
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(stringResource(row.label), modifier = Modifier.weight(1f))
+                                if (row.installing) {
+                                    CircularProgressIndicator(Modifier.size(24.dp))
+                                } else {
+                                    Icon(
+                                        painter = painterResource(
+                                            if (row.installed) R.drawable.ic_baseline_done_24
+                                            else R.drawable.ic_baseline_update_24
+                                        ),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                            }
+                            row.detail?.let { detail ->
+                                Text(
+                                    text = detail,
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(start = 10.dp, end = 10.dp, bottom = 6.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                }
+                Box(
+                    Modifier.width(1.dp).fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+                Column(
+                    modifier = Modifier.weight(0.3f).fillMaxHeight().padding(12.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = context.getString(R.string.splash_runtime_title),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Button(
+                        onClick = onInstall,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                    ) {
+                        Text(context.getString(R.string.splash_runtime_install))
+                    }
+                }
+            }
+        }
     }
 }

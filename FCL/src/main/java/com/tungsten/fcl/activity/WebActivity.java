@@ -10,7 +10,6 @@ import android.view.View;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.ProgressBar;
 
 import androidx.annotation.Nullable;
 
@@ -24,7 +23,7 @@ import java.util.function.Consumer;
 public class WebActivity extends FCLActivity {
 
     private WebView webView;
-    private ProgressBar progressBar;
+    private WebActivityComposeState composeState;
     private Consumer<OAuthServer.LoginCompletedDeviceCodeEvent> loginCompletedListener;
     private Consumer<OAuthServer.LoginFinishedEvent> loginFinishedListener;
 
@@ -32,13 +31,18 @@ public class WebActivity extends FCLActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_web);
-        progressBar = findViewById(R.id.progress);
-        webView = findViewById(R.id.web_view);
-        webView.setWebViewClient(new WebViewTrackClient());
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        webView.loadUrl(getIntent().getExtras().getString("url"));
+        composeState = new WebActivityComposeState();
+        setContentView(WebActivityCompose.createView(
+            this,
+            getIntent().getExtras().getString("url"),
+            composeState,
+                view -> {
+                    webView = view;
+                    webView.setWebViewClient(new WebViewTrackClient());
+                    WebSettings settings = webView.getSettings();
+                    settings.setJavaScriptEnabled(true);
+                }
+        ));
 
         // 设备码轮询拿到 token 即视为浏览器侧登录完成，立即关闭页面，不等 XBL/profile 整条后台链跑完
         loginCompletedListener = event -> runOnUiThread(this::finish);
@@ -70,7 +74,7 @@ public class WebActivity extends FCLActivity {
     class WebViewTrackClient extends WebViewClient {
         @Override
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
-            progressBar.setVisibility(View.VISIBLE);
+            composeState.setLoading(true);
             // 微软登录完成后重定向到本地 OAuthServer 回调地址，该请求已把授权码交给后台流程，
             // 页面使命完成，立即关闭（不能在 shouldOverrideUrlLoading 拦截，否则回调请求发不出去，登录会挂起）
             if (isOAuthCallback(url)) {
@@ -80,7 +84,7 @@ public class WebActivity extends FCLActivity {
 
         @Override
         public void onPageFinished(WebView view, String url) {
-            progressBar.setVisibility(View.GONE);
+            composeState.setLoading(false);
         }
     }
 

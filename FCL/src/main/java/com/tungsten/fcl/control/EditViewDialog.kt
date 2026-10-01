@@ -3,11 +3,10 @@ package com.tungsten.fcl.control
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup
-import com.tungsten.fcl.R
+import androidx.compose.ui.platform.ComposeView
 import com.tungsten.fcl.control.data.ControlButtonData
 import com.tungsten.fcl.control.data.ControlDirectionData
 import com.tungsten.fcl.control.data.CustomControl
-import com.tungsten.fcl.databinding.DialogEditViewBinding
 import com.tungsten.fcllibrary.component.dialog.FCLDialog
 import com.tungsten.fcllibrary.util.ConvertUtils
 
@@ -43,48 +42,26 @@ class EditViewDialog(
         EditDirectionDetails(context, menu, cloneView as ControlDirectionData)
     }
 
-    private var binding: DialogEditViewBinding
-
     init {
         setCancelable(false)
         // 游戏内悬浮面板：游戏菜单配色 + 与 dialog_background 相同的 10dp inset，
         // 全高窗口靠背景内缩留出与屏幕边缘的间隔
         window?.setBackgroundDrawableResource(R.drawable.bg_game_menu_inset)
         window?.setLayout(ConvertUtils.dip2px(context, 500f), ViewGroup.LayoutParams.MATCH_PARENT)
-        binding = DialogEditViewBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        binding.title.setText(
+        val title = context.getString(
             if (cloneView.type == CustomControl.ViewType.CONTROL_BUTTON) R.string.edit_button_title
             else R.string.edit_direction_title
         )
-
-        binding.info.setOnClickListener { showLayout(0) }
-        binding.event.setOnClickListener { showLayout(1) }
-
-        binding.clone.visibility = if (cloneable) View.VISIBLE else View.GONE
-        binding.clone.setOnClickListener {
-            callback.onClone(cloneView.cloneView())
-            dismiss()
-        }
-        binding.delete.setOnClickListener {
-            callback.onDelete()
-            dismiss()
-        }
-        binding.positive.setOnClickListener {
-            callback.onPositive(details.getView())
-            dismiss()
-        }
-        binding.negative.setOnClickListener { dismiss() }
-
-        showLayout(0)
-    }
-
-    private fun showLayout(position: Int) {
-        binding.container.removeAllViews()
-        binding.container.addView(
-            if (position == 0) details.infoLayout else details.eventLayout,
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        )
+        setContentView(EditViewDialogCompose.createView(
+            context,
+            title,
+            details.infoLayout,
+            details.eventLayout,
+            cloneable,
+            { callback.onClone(cloneView.cloneView()); dismiss() },
+            { callback.onDelete(); dismiss() },
+            { callback.onPositive(details.getView()); dismiss() },
+            this::dismiss
+        ))
     }
 }

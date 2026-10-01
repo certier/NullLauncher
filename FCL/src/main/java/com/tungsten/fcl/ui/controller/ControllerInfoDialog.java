@@ -2,40 +2,28 @@ package com.tungsten.fcl.ui.controller;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.view.Window;
-import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.compose.ui.platform.ComposeView;
 
 import com.tungsten.fcl.R;
 import com.tungsten.fcl.setting.Controller;
 import com.tungsten.fclcore.util.StringUtils;
 import com.tungsten.fclcore.util.platform.OperatingSystem;
 import com.tungsten.fcllibrary.component.dialog.FCLDialog;
-import com.tungsten.fcllibrary.component.view.FCLButton;
-import com.tungsten.fcllibrary.component.view.FCLCheckBox;
-import com.tungsten.fcllibrary.component.view.FCLEditText;
-import com.tungsten.fcllibrary.component.view.FCLLinearLayout;
-import com.tungsten.fcllibrary.component.view.FCLTextView;
 import com.tungsten.fcllibrary.util.ConvertUtils;
 
-public class ControllerInfoDialog extends FCLDialog implements View.OnClickListener {
+public class ControllerInfoDialog extends FCLDialog {
 
     private final boolean create;
     private final Controller controller;
     private final Callback callback;
 
-    private FCLEditText editName;
-
-    private FCLEditText editVersion;
-    private FCLEditText editVersionCode;
-    private FCLEditText editAuthor;
-    private FCLEditText editDescription;
-
-    private FCLButton positive;
-    private FCLButton negative;
+    private final ControllerInfoDialogState state;
 
     @SuppressLint("SetTextI18n")
     public ControllerInfoDialog(@NonNull Context context, boolean create, Controller controller, Callback callback) {
@@ -45,74 +33,44 @@ public class ControllerInfoDialog extends FCLDialog implements View.OnClickListe
         this.callback = callback;
         Window window = getWindow();
         if (window != null) {
-            window.setLayout(ConvertUtils.dip2px(getContext(), 400), LinearLayout.LayoutParams.WRAP_CONTENT);
+            window.setLayout(ConvertUtils.dip2px(getContext(), 400), WindowManager.LayoutParams.WRAP_CONTENT);
         }
-        setContentView(R.layout.dialog_controller_info);
         setCancelable(false);
-
-        FCLTextView titleView = findViewById(R.id.title);
-        titleView.setText(create ? getContext().getString(R.string.control_create) : getContext().getString(R.string.control_info_edit));
-
-        editName = findViewById(R.id.name);
-
-        FCLLinearLayout moreInfoLayout = findViewById(R.id.more_info_layout);
-        editVersion = findViewById(R.id.version);
-        editVersionCode = findViewById(R.id.version_code);
-        editAuthor = findViewById(R.id.author);
-        editDescription = findViewById(R.id.description);
-
-        editVersionCode.setIntegerFilter(1);
-
-        editName.setText(controller.getName());
-        editVersion.setText(controller.getVersion());
-        editVersionCode.setText(controller.getVersionCode() + "");
-        editAuthor.setText(controller.getAuthor());
-        editDescription.setText(controller.getDescription());
-
-        FCLCheckBox moreInfo = findViewById(R.id.more_info);
-        assert moreInfo != null;
-        assert moreInfoLayout != null;
-        moreInfoLayout.setVisibility(View.GONE);
-        moreInfo.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (isChecked) {
-                getWindow().setLayout(ConvertUtils.dip2px(getContext(), 400), LinearLayout.LayoutParams.MATCH_PARENT);
-                moreInfoLayout.setVisibility(View.VISIBLE);
-            } else {
-                getWindow().setLayout(ConvertUtils.dip2px(getContext(), 400), ConvertUtils.dip2px(getContext(), 200));
-                moreInfoLayout.setVisibility(View.GONE);
-            }
-        });
-
-        positive = findViewById(R.id.positive);
-        negative = findViewById(R.id.negative);
-        positive.setOnClickListener(this);
-        negative.setOnClickListener(this);
+        state = new ControllerInfoDialogState(
+                controller.getName(),
+                controller.getVersion(),
+                String.valueOf(controller.getVersionCode()),
+                controller.getAuthor(),
+                controller.getDescription(),
+                create ? getContext().getString(R.string.control_create) : getContext().getString(R.string.control_info_edit)
+        );
+        ComposeView composeView = ControllerInfoDialogCompose.createView(getContext(), state, this::submit, this::dismiss);
+        setContentView(composeView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
-    @Override
-    public void onClick(View view) {
-        if (view == positive) {
-            if (!OperatingSystem.isNameValid(editName.getText().toString()) || editName.getText().toString().equals("Error")) {
+    private void submit() {
+            String name = state.getName();
+            String version = state.getVersion();
+            String versionCode = state.getVersionCode();
+            String author = state.getAuthor();
+            String description = state.getDescription();
+            if (!OperatingSystem.isNameValid(name) || name.equals("Error")) {
                 Toast.makeText(getContext(), getContext().getString(R.string.control_info_name_invalid), Toast.LENGTH_SHORT).show();
             } else {
                 String id = this.controller.getId();
-                if (!editAuthor.getText().toString().equals(this.controller.getAuthor())) {
+                if (!author.equals(this.controller.getAuthor())) {
                     id = Controller.generateRandomId();
                 }
                 Controller controller = new Controller(id,
-                        editName.getText().toString(),
-                        editVersion.getText().toString(),
-                        Integer.parseInt(StringUtils.isBlank(editVersionCode.getText().toString()) ? "1" : editVersionCode.getText().toString()),
-                        editAuthor.getText().toString(),
-                        editDescription.getText().toString(),
+                        name,
+                        version,
+                        Integer.parseInt(StringUtils.isBlank(versionCode) ? "1" : versionCode),
+                        author,
+                        description,
                         this.controller.getControllerVersion());
                 callback.onInfoGenerate(controller);
                 dismiss();
             }
-        }
-        if (view == negative) {
-            dismiss();
-        }
     }
 
     public interface Callback {

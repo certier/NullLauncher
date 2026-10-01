@@ -1,91 +1,170 @@
 package com.tungsten.fcl.ui.download.favorite
 
 import android.content.Context
-import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
 import com.tungsten.fcl.R
-import com.tungsten.fcl.databinding.DialogFavoriteBatchBinding
-import com.tungsten.fcl.databinding.DialogFavoriteBatchItemBinding
 import com.tungsten.fclcore.mod.RemoteMod
 import com.tungsten.fcllibrary.component.dialog.FCLDialog
-import com.tungsten.fcllibrary.component.view.FCLCheckBox
-import com.tungsten.fcllibrary.util.ConvertUtils
+import com.tungsten.fcllibrary.component.theme.FCLComposeTheme
 
-/**
- * 一键下载对话框：阶段一展示解析进度；阶段二列出与当前版本/加载器匹配的收藏模组
- * （默认全选，展示将下载的文件名），用户勾选确认后回调，由调用方提交批量下载。
- */
+/** Batch download picker with parse progress and preselected matching versions. */
 class FavoriteBatchDialog(context: Context) : FCLDialog(context) {
-
-    /** 一条可下载的收藏模组：展示名 + 匹配到的版本 */
     data class Entry(val title: String, val version: RemoteMod.Version)
 
-    private val binding: DialogFavoriteBatchBinding
-    private val entries = mutableListOf<Entry>()
+    private val entries = mutableStateListOf<Entry>()
+    private var parsing by mutableStateOf(true)
+    private var skippedCount by mutableStateOf(0)
+    private var selectedIndices by mutableStateOf<Set<Int>>(emptySet())
     private var onDownload: ((List<RemoteMod.Version>) -> Unit)? = null
 
     init {
         setCancelable(true)
-        window?.setLayout(ConvertUtils.dip2px(context, 400f), ViewGroup.LayoutParams.WRAP_CONTENT)
-        binding = DialogFavoriteBatchBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        binding.negative.setOnClickListener { dismiss() }
-        binding.positive.setOnClickListener {
-            val selected = entries.filterIndexed { index, _ ->
-                binding.listContainer.getChildAt(index).findViewById<FCLCheckBox>(R.id.check).isChecked
-            }.map { it.version }
-            if (selected.isNotEmpty()) {
-                val callback = onDownload
-                dismiss()
-                callback?.invoke(selected)
+        window?.setLayout((400 * context.resources.displayMetrics.density).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
+        setContentView(ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+            setContent {
+                FCLComposeTheme {
+                    FavoriteBatchContent(
+                        entries = entries,
+                        parsing = parsing,
+                        skippedCount = skippedCount,
+                        selectedIndices = selectedIndices,
+                        onToggle = ::toggle,
+                        onConfirm = ::confirm,
+                        onDismiss = ::dismiss
+                    )
+                }
             }
-        }
-        showParsing()
+        }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    /** 阶段一：解析进度 */
     fun showParsing() {
-        binding.parsing.visibility = View.VISIBLE
-        binding.scroll.visibility = View.GONE
-        binding.skippedNote.visibility = View.GONE
-        binding.positive.visibility = View.GONE
+        parsing = true
+        skippedCount = 0
+        entries.clear()
+        selectedIndices = emptySet()
     }
 
-    /** 阶段二：展示可下载模组（默认全选），无匹配被跳过的数量显示在底部 */
-    fun showResult(items: List<Entry>, skippedTitles: List<String>, callback: (List<RemoteMod.Version>) -> Unit) {
+    fun showResult(
+        items: List<Entry>,
+        skippedTitles: List<String>,
+        callback: (List<RemoteMod.Version>) -> Unit
+    ) {
         onDownload = callback
         entries.clear()
         entries.addAll(items)
-        val inflater = LayoutInflater.from(context)
-        binding.listContainer.removeAllViews()
-        entries.forEach { entry ->
-            val item = DialogFavoriteBatchItemBinding.inflate(inflater, binding.listContainer, false)
-            item.title.text = entry.title
-            item.versionName.text = entry.version.file().filename()
-            item.check.isChecked = true
-            item.check.setOnCheckedChangeListener { _, _ -> updatePositiveState() }
-            binding.listContainer.addView(item.root)
-        }
-        binding.parsing.visibility = View.GONE
-        binding.scroll.visibility = View.VISIBLE
-        binding.positive.visibility = View.VISIBLE
-        updatePositiveState()
-        if (skippedTitles.isNotEmpty()) {
-            binding.skippedNote.text = context.getString(R.string.favorite_batch_skipped_note, skippedTitles.size)
-            binding.skippedNote.visibility = View.VISIBLE
-        }
+        selectedIndices = items.indices.toSet()
+        skippedCount = skippedTitles.size
+        parsing = false
     }
 
-    private fun updatePositiveState() {
-        var any = false
-        for (index in 0 until binding.listContainer.childCount) {
-            if (binding.listContainer.getChildAt(index).findViewById<FCLCheckBox>(R.id.check).isChecked) {
-                any = true
-                break
+    private fun toggle(index: Int, selected: Boolean) {
+        selectedIndices = if (selected) selectedIndices + index else selectedIndices - index
+    }
+
+    private fun confirm() {
+        val selected = entries.filterIndexed { index, _ -> index in selectedIndices }.map { it.version }
+        if (selected.isNotEmpty()) {
+            val callback = onDownload
+            dismiss()
+            callback?.invoke(selected)
+        }
+    }
+}
+
+@Composable
+private fun FavoriteBatchContent(
+    entries: List<FavoriteBatchDialog.Entry>,
+    parsing: Boolean,
+    skippedCount: Int,
+    selectedIndices: Set<Int>,
+    onToggle: (Int, Boolean) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+        Text(context.getString(R.string.favorite_download_all), style = MaterialTheme.typography.titleLarge)
+        if (parsing) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                CircularProgressIndicator()
+                Text(context.getString(R.string.favorite_batch_parsing))
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                itemsIndexed(entries) { index, entry ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = index in selectedIndices,
+                            onCheckedChange = { onToggle(index, it) }
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(entry.title, maxLines = 1)
+                            Text(
+                                entry.version.file().filename(),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+            if (skippedCount > 0) {
+                Text(
+                    text = context.getString(R.string.favorite_batch_skipped_note, skippedCount),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
-        binding.positive.isEnabled = any
-        binding.positive.alpha = if (any) 1f else 0.45f
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = onDismiss) { Text(context.getString(R.string.dialog_negative)) }
+            if (!parsing) {
+                Button(
+                    onClick = onConfirm,
+                    enabled = selectedIndices.isNotEmpty(),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                ) {
+                    Text(context.getString(R.string.favorite_batch_download))
+                }
+            }
+        }
     }
 }

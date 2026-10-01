@@ -2,15 +2,13 @@ package com.tungsten.fcl.upgrade;
 
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Point;
 import android.net.Uri;
-import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.widget.ScrollView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatDialog;
+import androidx.compose.ui.platform.ComposeView;
 import androidx.core.content.FileProvider;
 
 import com.tungsten.fcl.R;
@@ -27,97 +25,36 @@ import com.tungsten.fclcore.task.TaskExecutor;
 import com.tungsten.fclcore.util.io.NetworkUtils;
 import com.tungsten.fcllibrary.component.dialog.FCLAlertDialog;
 import com.tungsten.fcllibrary.component.dialog.FCLDialog;
-import com.tungsten.fcllibrary.component.view.FCLButton;
-import com.tungsten.fcllibrary.component.view.FCLLinearLayout;
-import com.tungsten.fcllibrary.component.view.FCLTextView;
-import com.tungsten.fcllibrary.util.ConvertUtils;
 
 import java.io.File;
 import java.util.concurrent.CancellationException;
 
-public class UpdateDialog extends FCLDialog implements View.OnClickListener {
+public class UpdateDialog extends FCLDialog {
 
     private final RemoteVersion version;
-
-    private View parent;
-    private ScrollView scrollView;
-    private FCLLinearLayout layout;
-
-    private FCLTextView versionName;
-    private FCLTextView date;
-    private FCLTextView type;
-    private FCLTextView description;
-
-    private FCLButton ignore;
-    private FCLButton positive;
-    private FCLButton negative;
-    private FCLButton netdisk;
 
     public UpdateDialog(@NonNull Context context, RemoteVersion version) {
         super(context);
         this.version = version;
         setCancelable(false);
-        setContentView(R.layout.dialog_update);
-
-        init();
+        setContentView(UpdateDialogCompose.createView(
+                context,
+                version,
+                this::ignoreUpdate,
+                this::startUpdate,
+                this::openNetdisk,
+                this::dismiss,
+                this::openLatestRelease
+        ), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        getWindow().setLayout((int) (450 * context.getResources().getDisplayMetrics().density), WindowManager.LayoutParams.WRAP_CONTENT);
     }
 
-    private void init() {
-        parent = findViewById(R.id.parent);
-        scrollView = findViewById(R.id.text_scroll);
-        layout = findViewById(R.id.layout);
-
-        versionName = findViewById(R.id.version);
-        date = findViewById(R.id.date);
-        type = findViewById(R.id.type);
-        description = findViewById(R.id.description);
-
-        versionName.setText(String.format(getContext().getString(R.string.update_version), version.getVersionName()));
-        date.setText(String.format(getContext().getString(R.string.update_date), version.getDate()));
-        type.setText(String.format(getContext().getString(R.string.update_type), version.getDisplayType(getContext())));
-        description.setText(String.format(getContext().getString(R.string.update_description), version.getDisplayDescription(getContext())));
-
-        ignore = findViewById(R.id.ignore);
-        positive = findViewById(R.id.positive);
-        negative = findViewById(R.id.negative);
-        netdisk = findViewById(R.id.netdisk);
-        ignore.setOnClickListener(this);
-        positive.setOnClickListener(this);
-        negative.setOnClickListener(this);
-        netdisk.setOnClickListener(this);
-
-        positive.setOnLongClickListener(view -> {
-            AndroidUtilKt.openLink(getContext(),"https://github.com/FCL-Team/FoldCraftLauncher/releases/latest");
-            return true;
-        });
-
-        checkHeight();
+    private void ignoreUpdate() {
+        UpdateChecker.setIgnore(getContext(), version.getVersionCode());
+        dismiss();
     }
 
-    private void checkHeight() {
-        parent.post(() -> layout.post(() -> {
-            WindowManager wm = getWindow().getWindowManager();
-            Point point = new Point();
-            wm.getDefaultDisplay().getSize(point);
-            int maxHeight = point.y - ConvertUtils.dip2px(getContext(), 30);
-            if (parent.getMeasuredHeight() < maxHeight) {
-                ViewGroup.LayoutParams layoutParams = scrollView.getLayoutParams();
-                layoutParams.height = layout.getMeasuredHeight();
-                scrollView.setLayoutParams(layoutParams);
-                getWindow().setLayout(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT);
-            } else {
-                getWindow().setLayout(WindowManager.LayoutParams.WRAP_CONTENT, maxHeight);
-            }
-        }));
-    }
-
-    @Override
-    public void onClick(View v) {
-        if (v == ignore) {
-            UpdateChecker.setIgnore(getContext(), version.getVersionCode());
-            dismiss();
-        }
-        if (v == positive) {
+    private void startUpdate() {
             TaskDialog dialog = new TaskDialog(getContext(), new TaskCancellationAction(AppCompatDialog::dismiss));
             dialog.setTitle(getContext().getString(R.string.update_launcher));
             Schedulers.androidUIThread().execute(() -> {
@@ -149,15 +86,16 @@ public class UpdateDialog extends FCLDialog implements View.OnClickListener {
                 dialog.show();
                 executor.start();
             });
-            dismiss();
-        }
-        if (v == negative) {
-            dismiss();
-        }
-        if (v == netdisk) {
-            AndroidUtilKt.openLink(getContext(), version.getNetdiskUrl());
-            dismiss();
-        }
+        dismiss();
+    }
+
+    private void openNetdisk() {
+        AndroidUtilKt.openLink(getContext(), version.getNetdiskUrl());
+        dismiss();
+    }
+
+    private void openLatestRelease() {
+        AndroidUtilKt.openLink(getContext(), "https://github.com/FCL-Team/FoldCraftLauncher/releases/latest");
     }
 
     @NonNull

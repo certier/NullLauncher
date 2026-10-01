@@ -1,179 +1,94 @@
 package com.tungsten.fcllibrary.component.dialog;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
-import android.graphics.Point;
 import android.text.Spanned;
-import android.text.util.Linkify;
-import android.view.View;
-import android.view.ViewGroup;
-import android.view.WindowManager;
-import android.widget.ScrollView;
 
 import androidx.annotation.NonNull;
-import androidx.constraintlayout.utils.widget.ImageFilterView;
-import androidx.core.text.method.LinkMovementMethodCompat;
 
 import com.tungsten.fcl.R;
-import com.tungsten.fcllibrary.component.theme.ThemeEngine;
-import com.tungsten.fcllibrary.component.view.FCLButton;
-import com.tungsten.fcllibrary.component.view.FCLTextView;
-import com.tungsten.fcllibrary.util.ConvertUtils;
 
-public class FCLAlertDialog extends FCLDialog implements View.OnClickListener {
+public class FCLAlertDialog extends FCLDialog {
+
+    private static final int POSITIVE = 0;
+    private static final int NEUTRAL = 1;
+    private static final int EXTRA = 2;
+    private static final int NEGATIVE = 3;
 
     private String titleString;
+    private final FCLAlertDialogState state;
 
     private ButtonListener positiveListener;
     private ButtonListener negativeListener;
     private ButtonListener neutralListener;
     private ButtonListener extraListener;
 
-    private View parent;
-    private ImageFilterView icon;
-    private FCLTextView title;
-    private ScrollView scrollView;
-    private FCLTextView message;
-    private FCLButton positive;
-    private FCLButton negative;
-    private FCLButton neutral;
-    private FCLButton extra;
-
-    @SuppressLint("UseCompatLoadingForDrawables")
     public FCLAlertDialog(@NonNull Context context) {
         super(context);
-
-        setContentView(R.layout.dialog_alert);
-
-        parent = findViewById(R.id.parent);
-
-        icon = findViewById(R.id.image);
-        title = findViewById(R.id.title);
-        scrollView = findViewById(R.id.text_scroll);
-        message = findViewById(R.id.text);
-        positive = findViewById(R.id.positive);
-        negative = findViewById(R.id.negative);
-        neutral = findViewById(R.id.neutral);
-        extra = findViewById(R.id.extra);
-
-        checkHeight();
-
-        positive.setVisibility(View.GONE);
-        negative.setVisibility(View.GONE);
-        neutral.setVisibility(View.GONE);
-        extra.setVisibility(View.GONE);
-
-        positive.setOnClickListener(this);
-        negative.setOnClickListener(this);
-        neutral.setOnClickListener(this);
-        extra.setOnClickListener(this);
-
-        icon.setImageDrawable(getContext().getDrawable(R.drawable.ic_baseline_info_24));
-        title.setText(getContext().getString(R.string.dialog_info));
-
-        positive.setSelected(true);
-        negative.setSelected(true);
-        neutral.setSelected(true);
-        extra.setSelected(true);
+        state = new FCLAlertDialogState(context.getString(R.string.dialog_info), AlertLevel.INFO.ordinal());
+        setContentView(FCLAlertDialogCompose.createView(context, state, this::onAction));
     }
 
-    private void checkHeight() {
-        parent.post(() -> message.post(() -> {
-            WindowManager wm = getWindow().getWindowManager();
-            Point point = new Point();
-            wm.getDefaultDisplay().getSize(point);
-            int maxHeight = point.y - ConvertUtils.dip2px(getContext(), 30);
-            if (parent.getMeasuredHeight() < maxHeight) {
-                ViewGroup.LayoutParams layoutParams = scrollView.getLayoutParams();
-                layoutParams.height = message.getMeasuredHeight();
-                scrollView.setLayoutParams(layoutParams);
-                getWindow().setLayout(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT);
-            } else {
-                getWindow().setLayout(WindowManager.LayoutParams.WRAP_CONTENT, maxHeight);
-            }
-        }));
-    }
-
-    @Override
-    public void onClick(View view) {
-        ButtonListener listener = null;
-        if (view == positive) listener = positiveListener;
-        else if (view == negative) listener = negativeListener;
-        else if (view == neutral) listener = neutralListener;
-        else if (view == extra) listener = extraListener;
-
+    private void onAction(int action) {
+        ButtonListener listener = switch (action) {
+            case POSITIVE -> positiveListener;
+            case NEUTRAL -> neutralListener;
+            case EXTRA -> extraListener;
+            case NEGATIVE -> negativeListener;
+            default -> null;
+        };
         if (listener != null) {
             listener.onClick();
         }
         dismiss();
     }
 
-    @SuppressLint("UseCompatLoadingForDrawables")
     public void setAlertLevel(AlertLevel alertLevel) {
-        switch (alertLevel) {
-            case ALERT:
-                icon.setImageDrawable(getContext().getDrawable(R.drawable.ic_baseline_warning_24));
-                if (titleString == null) {
-                    title.setText(getContext().getString(R.string.dialog_alert));
-                }
-                break;
-            default:
-                icon.setImageDrawable(getContext().getDrawable(R.drawable.ic_baseline_info_24));
-                if (titleString == null) {
-                    title.setText(getContext().getString(R.string.dialog_info));
-                }
-                break;
+        state.setAlertLevelCode(alertLevel.ordinal());
+        if (titleString == null) {
+            int titleResource = alertLevel == AlertLevel.ALERT ? R.string.dialog_alert : R.string.dialog_info;
+            state.setTitle(getContext().getString(titleResource));
         }
     }
 
     public void setTitle(String title) {
         titleString = title;
-        this.title.setText(title);
+        state.setTitle(title);
     }
 
     public void setMessage(String message) {
-        this.message.setText(message);
-        checkHeight();
+        state.setMessage(message);
     }
 
     public void setMessage(CharSequence message) {
-        this.message.setText(message);
-        checkHeight();
+        state.setMessage(message);
     }
 
     public void setMessage(Spanned message) {
-        this.message.setText(message);
-        checkHeight();
+        state.setMessage(message);
     }
 
     public void setPositiveButton(String text, ButtonListener listener) {
-        positive.setVisibility(View.VISIBLE);
-        positive.setText(text);
+        state.setAction(POSITIVE, text);
         positiveListener = listener;
     }
 
     public void setNegativeButton(String text, ButtonListener listener) {
-        negative.setVisibility(View.VISIBLE);
-        negative.setText(text);
+        state.setAction(NEGATIVE, text);
         negativeListener = listener;
     }
 
     public void setNeutralButton(String text, ButtonListener listener) {
-        neutral.setVisibility(View.VISIBLE);
-        neutral.setText(text);
+        state.setAction(NEUTRAL, text);
         neutralListener = listener;
     }
 
     public void setExtraButton(String text, ButtonListener listener) {
-        extra.setVisibility(View.VISIBLE);
-        extra.setText(text);
+        state.setAction(EXTRA, text);
         extraListener = listener;
     }
 
     public void useAutoLink() {
-        Linkify.addLinks(this.message, Linkify.WEB_URLS);
-        this.message.setMovementMethod(LinkMovementMethodCompat.getInstance());
-        this.message.setLinkTextColor(ThemeEngine.getInstance().getTheme().getColor());
+        state.setAutoLinkEnabled(true);
     }
 
     public static class Builder {

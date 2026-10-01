@@ -14,9 +14,7 @@ import com.mio.util.copyText
 import com.mio.util.openLink
 import com.mio.util.openLinkWithBuiltinWebView
 import com.tungsten.fcl.R
-import com.tungsten.fcl.databinding.DialogCharacterSelectorBinding
 import com.tungsten.fcl.databinding.DialogCreateAccountBinding
-import com.tungsten.fcl.databinding.ItemCharacterBinding
 import com.tungsten.fcl.databinding.ViewCreateAccountExternalBinding
 import com.tungsten.fcl.databinding.ViewCreateAccountMicrosoftBinding
 import com.tungsten.fcl.databinding.ViewCreateAccountOfflineBinding
@@ -41,7 +39,6 @@ import com.tungsten.fclcore.task.Schedulers
 import com.tungsten.fclcore.task.Task
 import com.tungsten.fclcore.task.TaskExecutor
 import com.tungsten.fclcore.util.StringUtils
-import com.tungsten.fcllibrary.component.FCLAdapter
 import com.tungsten.fcllibrary.component.dialog.FCLAlertDialog
 import com.tungsten.fcllibrary.component.dialog.FCLDialog
 import com.tungsten.fcllibrary.component.view.FCLImageButton
@@ -373,33 +370,24 @@ private class ExternalDetails(
  * 多角色账户登录时的角色选择对话框，select() 阻塞调用线程（后台登录线程）直至用户选择或取消。
  */
 private class DialogCharacterSelector(context: Context) :
-    FCLDialog(context), CharacterSelector, View.OnClickListener {
+    FCLDialog(context), CharacterSelector {
 
-    private val binding = DialogCharacterSelectorBinding.inflate(layoutInflater)
+    private val state = CharacterSelectorComposeState()
     private val handler = Handler(Looper.getMainLooper())
 
     private val latch = CountDownLatch(1)
     private var selectedProfile: GameProfile? = null
 
     init {
-        // ViewBinding 分离式 inflate 不产生根节点 LayoutParams，手动补回 XML 中的尺寸，
-        // 交由内容视图驱动窗口（与原先 setContentView(R.layout.xxx) 的行为一致）
-        binding.root.layoutParams = FrameLayout.LayoutParams(
-            ConvertUtils.dip2px(context, 300f),
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        setContentView(binding.root)
         setCancelable(false)
-        binding.negative.setOnClickListener(this)
+        window?.setLayout(ConvertUtils.dip2px(context, 300f), ViewGroup.LayoutParams.WRAP_CONTENT)
+        setContentView(CharacterSelectorCompose.createView(context, state, this::selectProfile, this::cancelSelection))
     }
 
     @Throws(NoSelectedCharacterException::class)
     override fun select(service: YggdrasilService, profiles: List<GameProfile>): GameProfile {
         handler.post {
-            binding.list.adapter = Adapter(context, service, profiles) { profile ->
-                selectedProfile = profile
-                latch.countDown()
-            }
+            state.setProfiles(service, profiles)
             show()
         }
 
@@ -413,45 +401,13 @@ private class DialogCharacterSelector(context: Context) :
         }
     }
 
-    override fun onClick(view: View) {
-        if (view === binding.negative) {
-            latch.countDown()
-            dismiss()
-        }
+    private fun selectProfile(profile: GameProfile) {
+        selectedProfile = profile
+        latch.countDown()
     }
 
-    private class Adapter(
-        context: Context,
-        private val service: YggdrasilService,
-        private val profiles: List<GameProfile>,
-        private val listener: (GameProfile) -> Unit
-    ) : FCLAdapter(context) {
-
-        private class ViewHolder(val binding: ItemCharacterBinding)
-
-        override fun getCount(): Int = profiles.size
-
-        override fun getItem(position: Int): Any = profiles[position]
-
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val holder: ViewHolder
-            val view: View
-            if (convertView == null) {
-                val itemBinding = ItemCharacterBinding.inflate(LayoutInflater.from(context))
-                view = itemBinding.root
-                holder = ViewHolder(itemBinding)
-                view.tag = holder
-            } else {
-                view = convertView
-                holder = view.tag as ViewHolder
-            }
-            val profile = profiles[position]
-            holder.binding.name.text = profile.name
-            holder.binding.avatar.imageProperty().bind(
-                TexturesLoader.avatarBinding(service, profile.id, ConvertUtils.dip2px(context, 30f))
-            )
-            holder.binding.parent.setOnClickListener { listener(profile) }
-            return view
-        }
+    private fun cancelSelection() {
+        latch.countDown()
+        dismiss()
     }
 }

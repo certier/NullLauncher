@@ -1,51 +1,37 @@
 package com.tungsten.fcl.ui.download.common;
 
 import android.content.Context;
-import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.compose.ui.platform.ComposeView;
 
 import com.tungsten.fcl.R;
 import com.tungsten.fclcore.util.platform.OperatingSystem;
 import com.tungsten.fcllibrary.component.dialog.FCLDialog;
-import com.tungsten.fcllibrary.component.view.FCLButton;
-import com.tungsten.fcllibrary.component.view.FCLEditText;
 
-public class DownloadAddonDialog extends FCLDialog implements View.OnClickListener {
+public class DownloadAddonDialog extends FCLDialog {
 
     private final Callback callback;
-
-    private FCLEditText editText;
-    private FCLButton positive;
-    private FCLButton negative;
+    private final DownloadAddonDialogState state;
 
     public DownloadAddonDialog(@NonNull Context context, String name, Callback callback) {
         super(context);
         this.callback = callback;
         setCancelable(false);
-        setContentView(R.layout.dialog_download_addon);
-
-        editText = findViewById(R.id.name);
-        editText.setText(name);
-
-        positive = findViewById(R.id.positive);
-        negative = findViewById(R.id.negative);
-        positive.setOnClickListener(this);
-        negative.setOnClickListener(this);
+        state = new DownloadAddonDialogState(name);
+        setContentView(DownloadAddonDialogCompose.createView(context, state, this::submit, this::dismiss),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        getWindow().setLayout((int) (400 * context.getResources().getDisplayMetrics().density), WindowManager.LayoutParams.WRAP_CONTENT);
     }
 
-    @Override
-    public void onClick(View v) {
-        if (v == positive) {
-            if (!OperatingSystem.isNameValid(editText.getText().toString())) {
-                Toast.makeText(getContext(), getContext().getString(R.string.install_new_game_malformed), Toast.LENGTH_SHORT).show();
-            } else {
-                callback.onPositive(editText.getText().toString());
-                dismiss();
-            }
-        }
-        if (v == negative) {
+    private void submit() {
+        if (!OperatingSystem.isNameValid(state.getName())) {
+            Toast.makeText(getContext(), getContext().getString(R.string.install_new_game_malformed), Toast.LENGTH_SHORT).show();
+        } else {
+            callback.onPositive(state.getName());
             dismiss();
         }
     }

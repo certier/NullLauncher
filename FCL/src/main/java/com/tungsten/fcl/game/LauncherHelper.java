@@ -30,6 +30,7 @@ import android.os.Bundle;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.compose.ui.platform.ComposeView;
 import androidx.annotation.Nullable;
 
 import com.google.gson.GsonBuilder;
@@ -693,82 +694,72 @@ public final class LauncherHelper {
         });
     }
 
-    static class SkipLoginDialog extends FCLDialog implements View.OnClickListener {
+    static class SkipLoginDialog extends FCLDialog {
 
         private final Account account;
         private final CompletableFuture<Task<AuthInfo>> future;
-
-        private final FCLButton retry;
-        private final FCLButton skip;
-        private final FCLButton cancel;
 
         public SkipLoginDialog(@NonNull Context context, Account account, CompletableFuture<Task<AuthInfo>> future) {
             super(context);
             this.account = account;
             this.future = future;
-            setContentView(R.layout.dialog_skip_login);
             setCancelable(false);
-
-            retry = findViewById(R.id.retry);
-            skip = findViewById(R.id.skip);
-            cancel = findViewById(R.id.cancel);
-            retry.setOnClickListener(this);
-            skip.setOnClickListener(this);
-            cancel.setOnClickListener(this);
+            setContentView(LoginPromptCompose.createSkipLoginView(
+                    context,
+                    this::retryLogin,
+                    this::skipLogin,
+                    this::cancelLogin
+            ));
         }
 
-        @Override
-        public void onClick(View view) {
-            if (view == retry) {
-                future.complete(logIn(getContext(), account, null));
+        private void retryLogin() {
+            future.complete(logIn(getContext(), account, null));
+            dismiss();
+        }
+
+        private void skipLogin() {
+            try {
+                future.complete(Task.completed(account.playOffline()));
+            } catch (AuthenticationException e) {
+                future.completeExceptionally(e);
             }
-            if (view == skip) {
-                try {
-                    future.complete(Task.completed(account.playOffline()));
-                } catch (AuthenticationException e2) {
-                    future.completeExceptionally(e2);
-                }
-            }
-            if (view == cancel) {
-                future.completeExceptionally(new CancellationException());
-            }
+            dismiss();
+        }
+
+        private void cancelLogin() {
+            future.completeExceptionally(new CancellationException());
             dismiss();
         }
     }
 
-    static class TipReLoginLoginDialog extends FCLDialog implements View.OnClickListener {
+    static class TipReLoginLoginDialog extends FCLDialog {
 
         private final Account account;
         private final CompletableFuture<Task<AuthInfo>> future;
-
-        private final FCLButton skip;
-        private final FCLButton ok;
 
         public TipReLoginLoginDialog(@NonNull Context context, Account account, CompletableFuture<Task<AuthInfo>> future) {
             super(context);
             this.account = account;
             this.future = future;
-            setContentView(R.layout.dialog_tip_relogin);
             setCancelable(false);
-
-            skip = findViewById(R.id.skip);
-            ok = findViewById(R.id.ok);
-            skip.setOnClickListener(this);
-            ok.setOnClickListener(this);
+            setContentView(LoginPromptCompose.createTipReLoginView(
+                    context,
+                    this::skipLogin,
+                    this::cancelLogin
+            ));
         }
 
-        @Override
-        public void onClick(View view) {
-            if (view == skip) {
-                try {
-                    future.complete(Task.completed(account.playOffline()));
-                } catch (AuthenticationException e2) {
-                    future.completeExceptionally(e2);
-                }
+        private void skipLogin() {
+            try {
+                future.complete(Task.completed(account.playOffline()));
+            } catch (AuthenticationException e) {
+                future.completeExceptionally(e);
             }
-            if (view == ok) {
-                future.completeExceptionally(new CancellationException());
-            }
+            dismiss();
+        }
+
+        private void cancelLogin() {
+            future.completeExceptionally(new CancellationException());
             dismiss();
         }
     }

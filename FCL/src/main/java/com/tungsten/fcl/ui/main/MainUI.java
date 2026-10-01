@@ -3,9 +3,8 @@ package com.tungsten.fcl.ui.main;
 import android.app.Activity;
 import android.content.Context;
 import android.view.View;
-
 import androidx.annotation.NonNull;
-import androidx.appcompat.widget.LinearLayoutCompat;
+import androidx.compose.ui.platform.ComposeView;
 
 import com.mio.skin.AnimationDialog;
 import com.mio.skin.SkinAnimations;
@@ -26,23 +25,16 @@ import com.tungsten.fclcore.util.io.HttpRequest;
 import com.tungsten.fcllibrary.component.dialog.FCLAlertDialog;
 import com.tungsten.fcllibrary.component.theme.ThemeEngine;
 import com.tungsten.fcllibrary.component.ui.FCLCommonUI;
-import com.tungsten.fcllibrary.component.view.FCLButton;
-import com.tungsten.fcllibrary.component.view.FCLTextView;
 import com.tungsten.fcllibrary.util.LocaleUtils;
 
 import java.util.logging.Level;
 
-public class MainUI extends FCLCommonUI implements View.OnClickListener {
+public class MainUI extends FCLCommonUI {
 
     public static final String ANNOUNCEMENT_URL = "https://raw.githubusercontent.com/FCL-Team/FCL-Repo/refs/heads/main/res/announcement_v2.txt";
     public static final String ANNOUNCEMENT_URL_CN = "https://gitee.com/fcl-team/FCL-Repo/raw/main/res/announcement_v2.txt";
 
-    private LinearLayoutCompat announcementContainer;
-    private LinearLayoutCompat announcementLayout;
-    private FCLTextView title;
-    private FCLTextView announcementView;
-    private FCLTextView date;
-    private FCLButton hide;
+    private MainUIComposeState composeState;
     private Announcement announcement = null;
 
     private SkinViewer skinViewer;
@@ -60,38 +52,22 @@ public class MainUI extends FCLCommonUI implements View.OnClickListener {
     @Override
     public void onCreate() {
         super.onCreate();
-        announcementContainer = findViewById(R.id.announcement_container);
-        announcementLayout = findViewById(R.id.announcement_layout);
-        title = findViewById(R.id.title);
-        announcementView = findViewById(R.id.announcement);
-        date = findViewById(R.id.date);
-        hide = findViewById(R.id.hide);
-        ThemeEngine.getInstance().registerEvent(announcementLayout, () -> announcementLayout.getBackground().setTint(ThemeEngine.getInstance().getTheme().getColor()));
-        hide.setOnClickListener(this);
-
-        skinViewer = findViewById(R.id.skin_viewer);
+        ComposeView composeView = findViewById(R.id.compose_view);
+        composeState = new MainUIComposeState();
         renderer = new SkinRenderer(getContext());
-        skinViewer.setRenderer(renderer, 5f);
+        MainUICompose.setContent(
+            composeView,
+            composeState,
+            renderer,
+            viewer -> skinViewer = viewer,
+            this::showAnimationDialog,
+            this::requestHideAnnouncement
+        );
         skinLoader = new SkinTextureLoader(renderer);
         skinLoader.load(Accounts.getSelectedAccount(), false);
         // 恢复上次选择的动画与 3D 皮肤层开关
         restoreSkinSettings(getContext(), renderer);
         // 双击模型弹出皮肤模型设置窗口
-        skinViewer.setOnDoubleClick(() -> {
-            Context context = getContext();
-            if (context instanceof Activity && !((Activity) context).isDestroyed() && !((Activity) context).isFinishing()) {
-                new AnimationDialog(context, renderer.getAnimationId(), renderer.getSolidLayerEnabled(), renderer.getUpperBodySeparated(), clipId -> {
-                    renderer.playAnimation(clipId);
-                    saveSkinSettings(context, renderer);
-                }, enabled -> {
-                    renderer.setSolidLayerEnabled(enabled);
-                    saveSkinSettings(context, renderer);
-                }, separated -> {
-                    renderer.setUpperBodySeparated(separated);
-                    saveSkinSettings(context, renderer);
-                }).show();
-            }
-        });
         checkAnnouncement();
 
         // 皮肤渲染随页面挂载/回收恢复与暂停（替代原 onStart/onStop 生命周期）
@@ -163,18 +139,31 @@ public class MainUI extends FCLCommonUI implements View.OnClickListener {
                         this.announcement = announcement;
                         if (!announcement.shouldDisplay(getContext()))
                             return;
-                        announcementContainer.setVisibility(View.VISIBLE);
-                        title.setText(getContext().getString(R.string.announcement, announcement.getDisplayTitle(getContext())));
-                        announcementView.setText(announcement.getDisplayContent(getContext()));
-                        date.setText(getContext().getString(R.string.update_date, announcement.getDate()));
+                        composeState.setAnnouncement(announcement);
                     }).start();
         } catch (Exception e) {
             Logging.LOG.log(Level.WARNING, "Failed to get announcement!", e);
         }
     }
 
+    private void showAnimationDialog() {
+        Context context = getContext();
+        if (context instanceof Activity && !((Activity) context).isDestroyed() && !((Activity) context).isFinishing()) {
+            new AnimationDialog(context, renderer.getAnimationId(), renderer.getSolidLayerEnabled(), renderer.getUpperBodySeparated(), clipId -> {
+                renderer.playAnimation(clipId);
+                saveSkinSettings(context, renderer);
+            }, enabled -> {
+                renderer.setSolidLayerEnabled(enabled);
+                saveSkinSettings(context, renderer);
+            }, separated -> {
+                renderer.setUpperBodySeparated(separated);
+                saveSkinSettings(context, renderer);
+            }).show();
+        }
+    }
+
     private void hideAnnouncement() {
-        announcementContainer.setVisibility(View.GONE);
+        composeState.setAnnouncement(null);
         if (announcement != null) {
             announcement.hide(getContext());
         }
@@ -188,20 +177,17 @@ public class MainUI extends FCLCommonUI implements View.OnClickListener {
         });
     }
 
-    @Override
-    public void onClick(View view) {
-        if (view == hide) {
-            if (announcement != null && announcement.isSignificant()) {
-                FCLAlertDialog.Builder builder = new FCLAlertDialog.Builder(getContext());
-                builder.setAlertLevel(FCLAlertDialog.AlertLevel.ALERT);
-                builder.setCancelable(false);
-                builder.setMessage(getContext().getString(R.string.announcement_significant));
-                builder.setPositiveButton(this::hideAnnouncement);
-                builder.setNegativeButton(null);
-                builder.create().show();
-            } else {
-                hideAnnouncement();
-            }
+    private void requestHideAnnouncement() {
+        if (announcement != null && announcement.isSignificant()) {
+            FCLAlertDialog.Builder builder = new FCLAlertDialog.Builder(getContext());
+            builder.setAlertLevel(FCLAlertDialog.AlertLevel.ALERT);
+            builder.setCancelable(false);
+            builder.setMessage(getContext().getString(R.string.announcement_significant));
+            builder.setPositiveButton(this::hideAnnouncement);
+            builder.setNegativeButton(null);
+            builder.create().show();
+        } else {
+            hideAnnouncement();
         }
     }
 }

@@ -1,33 +1,27 @@
 package com.tungsten.fcl.control;
 
 import android.content.Context;
-import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ListView;
+import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.compose.ui.platform.ComposeView;
 
 import com.tungsten.fcl.R;
 import com.tungsten.fcl.control.data.ControlDirectionStyle;
 import com.tungsten.fcl.control.data.ControlViewGroup;
 import com.tungsten.fcl.control.data.DirectionStyles;
 import com.tungsten.fcllibrary.component.dialog.FCLDialog;
-import com.tungsten.fcllibrary.component.view.FCLButton;
 
-public class DirectionStyleDialog extends FCLDialog implements View.OnClickListener {
+public class DirectionStyleDialog extends FCLDialog implements DirectionStyleDialogActions {
 
     private final boolean select;
     private final ControlDirectionStyle initStyle;
     private final Callback callback;
 
-    private FCLButton addStyle;
-    private FCLButton editStyle;
-    private FCLButton positive;
-
-    private ListView listView;
-
     private GameMenu menu;
+    private final DirectionStyleDialogState state;
 
     public interface Callback {
         void onStyleSelect(ControlDirectionStyle style);
@@ -38,74 +32,74 @@ public class DirectionStyleDialog extends FCLDialog implements View.OnClickListe
         this.select = select;
         this.initStyle = initStyle;
         this.callback = callback;
-        if (getWindow() != null) {
-            getWindow().setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        }
-        setContentView(R.layout.dialog_manage_direction_style);
         setCancelable(false);
-
-        addStyle = findViewById(R.id.add_style);
-        editStyle = findViewById(R.id.edit_style);
-        positive = findViewById(R.id.positive);
-        addStyle.setOnClickListener(this);
-        editStyle.setOnClickListener(this);
-        positive.setOnClickListener(this);
-
-        listView = findViewById(R.id.list);
-        refreshList();
-
-        if (!select) {
-            editStyle.setVisibility(View.GONE);
-        }
+        if (getWindow() != null) getWindow().setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.MATCH_PARENT);
+        state = new DirectionStyleDialogState(DirectionStyles.getStyles(), initStyle);
+        setContentView(DirectionStyleDialogCompose.createView(context, state, select, this),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     }
 
-    private DirectionStyleAdapter adapter;
-
     public void refreshList() {
-        adapter = new DirectionStyleAdapter(getContext(), DirectionStyles.getStyles(), select, initStyle);
-        listView.setAdapter(adapter);
-        if (initStyle != null)
-            listView.setSelection(DirectionStyles.findStyleIndexByName(initStyle.getName()));
+        state.refresh(DirectionStyles.getStyles());
     }
 
     @Override
-    public void onClick(View v) {
-        if (v == addStyle) {
-            AddDirectionStyleDialog dialog = new AddDirectionStyleDialog(getContext(), null, false, style -> {
-                DirectionStyles.addStyle(style);
-                refreshList();
-            });
-            dialog.show();
-        }
-        if (v == editStyle) {
-            AddDirectionStyleDialog dialog = new AddDirectionStyleDialog(getContext(), adapter.getSelectedStyle(), true, style -> {
-                ControlDirectionStyle before = adapter.getSelectedStyle();
-                int i = DirectionStyles.getStyles().indexOf(before);
-                String beforeName = before.getName();
-                DirectionStyles.removeStyles(before);
-                DirectionStyles.addStyle(style, i);
-                refreshList();
-                adapter.setSelectedStyle(style);
-                if (menu != null) {
-                    ControlViewGroup viewGroup = menu.getViewGroup();
-                    if (viewGroup != null) {
-                        viewGroup.getViewData().directionList().forEach(it -> {
-                            String name = it.getStyle().getName();
-                            if (name.equals(style.getName()) || name.equals(beforeName)) {
-                                it.setStyle(style);
-                            }
-                        });
-                    }
+    public void onAddStyle() {
+        AddDirectionStyleDialog dialog = new AddDirectionStyleDialog(getContext(), null, false, style -> {
+            DirectionStyles.addStyle(style);
+            refreshList();
+        });
+        dialog.show();
+    }
+
+    @Override
+    public void onEditStyle() {
+        ControlDirectionStyle before = state.getSelectedStyle();
+        if (before == null) return;
+        AddDirectionStyleDialog dialog = new AddDirectionStyleDialog(getContext(), before, true, style -> {
+            int index = DirectionStyles.getStyles().indexOf(before);
+            String beforeName = before.getName();
+            DirectionStyles.removeStyles(before);
+            DirectionStyles.addStyle(style, index);
+            refreshList();
+            state.setSelectedStyle(style);
+            if (menu != null) {
+                ControlViewGroup viewGroup = menu.getViewGroup();
+                if (viewGroup != null) {
+                    viewGroup.getViewData().directionList().forEach(it -> {
+                        String name = it.getStyle().getName();
+                        if (name.equals(style.getName()) || name.equals(beforeName)) it.setStyle(style);
+                    });
                 }
-            });
-            dialog.setGameMenu(menu);
-            dialog.show();
-        }
-        if (v == positive) {
-            dismiss();
-            if (callback != null && select) {
-                callback.onStyleSelect(adapter.getSelectedStyle());
             }
+        });
+        dialog.setGameMenu(menu);
+        dialog.show();
+    }
+
+    @Override
+    public void onDeleteStyle(ControlDirectionStyle style) {
+        FCLAlertDialog.Builder builder = new FCLAlertDialog.Builder(getContext());
+        builder.setCancelable(false).setAlertLevel(FCLAlertDialog.AlertLevel.INFO)
+                .setMessage(getContext().getString(R.string.style_warning_delete))
+                .setPositiveButton(() -> {
+                    DirectionStyles.removeStyles(style);
+                    DirectionStyles.checkStyles();
+                    refreshList();
+                }).setNegativeButton(null).create().show();
+    }
+
+    @Override
+    public void onSelectStyle(ControlDirectionStyle style) {
+        state.setSelectedStyle(style);
+    }
+
+    @Override
+    public void onConfirm() {
+        ControlDirectionStyle selected = state.getSelectedStyle();
+        dismiss();
+        if (callback != null && select && selected != null) {
+            callback.onStyleSelect(selected);
         }
     }
 

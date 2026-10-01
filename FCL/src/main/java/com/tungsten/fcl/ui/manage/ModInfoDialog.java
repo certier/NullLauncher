@@ -3,9 +3,12 @@ package com.tungsten.fcl.ui.manage;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.BitmapFactory;
-import android.view.View;
+import android.graphics.Bitmap;
+import android.view.ViewGroup;
+import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
+import androidx.compose.ui.platform.ComposeView;
 
 import com.tungsten.fcl.R;
 import com.mio.util.AndroidUtilKt;
@@ -16,9 +19,6 @@ import com.tungsten.fclcore.util.StringUtils;
 import com.tungsten.fclcore.util.io.CompressingUtils;
 import com.tungsten.fclcore.util.io.FileUtils;
 import com.tungsten.fcllibrary.component.dialog.FCLDialog;
-import com.tungsten.fcllibrary.component.view.FCLButton;
-import com.tungsten.fcllibrary.component.view.FCLImageView;
-import com.tungsten.fcllibrary.component.view.FCLTextView;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -26,36 +26,28 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-public class ModInfoDialog extends FCLDialog implements View.OnClickListener {
+public class ModInfoDialog extends FCLDialog {
 
     private final ModListPage.ModInfoObject modInfoObject;
-
-    private FCLImageView icon;
-    private FCLTextView name;
-    private FCLTextView version;
-    private FCLTextView fileName;
-    private FCLTextView description;
-
-    private FCLButton website;
-    private FCLButton positive;
+    private final ModInfoDialogState state;
 
     @SuppressLint("UseCompatLoadingForDrawables")
     public ModInfoDialog(@NonNull Context context, ModListPage.ModInfoObject modInfoObject) {
         super(context);
         this.modInfoObject = modInfoObject;
         setCancelable(false);
-        setContentView(R.layout.dialog_mod_info);
-
-        icon = findViewById(R.id.icon);
-        name = findViewById(R.id.name);
-        version = findViewById(R.id.version);
-        fileName = findViewById(R.id.file_name);
-        description = findViewById(R.id.description);
-
-        website = findViewById(R.id.website);
-        positive = findViewById(R.id.positive);
-        website.setOnClickListener(this);
-        positive.setOnClickListener(this);
+        state = new ModInfoDialogState(
+            modInfoObject.getModInfo().getName(),
+            getTag(modInfoObject),
+            FileUtils.getName(modInfoObject.getModInfo().getFile()),
+            modInfoObject.getModInfo().getDescription().toString(),
+            modInfoObject.getModInfo().getUrl(),
+            StringUtils.isNotBlank(modInfoObject.getModInfo().getUrl())
+        );
+        setContentView(ModInfoDialogCompose.createView(context, state, this::openWebsite, this::dismiss),
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        getWindow().setLayout((int) (400 * context.getResources().getDisplayMetrics().density),
+            (int) (240 * context.getResources().getDisplayMetrics().density));
 
         if (StringUtils.isNotBlank(modInfoObject.getModInfo().getLogoPath())) {
             Task.supplyAsync(() -> {
@@ -70,28 +62,17 @@ public class ModInfoDialog extends FCLDialog implements View.OnClickListener {
                 return null;
             }).whenComplete(Schedulers.androidUIThread(), (stream, exception) -> {
                 if (stream != null) {
-                    icon.setImageBitmap(BitmapFactory.decodeStream(stream));
+                    state.setLogo(BitmapFactory.decodeStream(stream));
                 } else {
-                    icon.setImageDrawable(getContext().getDrawable(R.drawable.img_command));
+                    state.setLogo(null);
                 }
             }).start();
         }
-
-        name.setText(modInfoObject.getModInfo().getName());
-        version.setText(getTag(modInfoObject));
-        fileName.setText(FileUtils.getName(modInfoObject.getModInfo().getFile()));
-        description.setText(modInfoObject.getModInfo().getDescription().toString());
-
-        website.setVisibility(StringUtils.isNotBlank(modInfoObject.getModInfo().getUrl()) ? View.VISIBLE : View.GONE);
     }
 
-    @Override
-    public void onClick(View v) {
-        if (v == website && StringUtils.isNotBlank(modInfoObject.getModInfo().getUrl())) {
+    private void openWebsite() {
+        if (StringUtils.isNotBlank(modInfoObject.getModInfo().getUrl())) {
             AndroidUtilKt.openLink(getContext(), modInfoObject.getModInfo().getUrl());
-        }
-        if (v == positive) {
-            dismiss();
         }
     }
 

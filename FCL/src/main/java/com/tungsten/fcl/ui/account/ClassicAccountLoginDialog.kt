@@ -1,9 +1,10 @@
 package com.tungsten.fcl.ui.account
 
 import android.content.Context
-import android.view.inputmethod.EditorInfo
+import android.view.ViewGroup
+import android.view.WindowManager
+import androidx.compose.ui.platform.ComposeView
 import com.tungsten.fcl.R
-import com.tungsten.fcl.databinding.DialogReloginPasswordBinding
 import com.tungsten.fcl.setting.Accounts
 import com.tungsten.fclcore.auth.AuthInfo
 import com.tungsten.fclcore.auth.ClassicAccount
@@ -23,35 +24,30 @@ class ClassicAccountLoginDialog(
     private val failed: Runnable,
 ) : FCLDialog(context) {
 
-    private val binding = DialogReloginPasswordBinding.inflate(layoutInflater)
+    private val state = ClassicAccountLoginState()
 
     init {
-        setContentView(binding.root)
         setCancelable(false)
-        binding.username.text = account.username
-        binding.login.setOnClickListener { logIn() }
-        binding.cancel.setOnClickListener {
-            failed.run()
-            dismiss()
-        }
-        binding.password.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_DONE) {
-                logIn()
-                true
-            } else {
-                false
+        window?.setLayout((400 * context.resources.displayMetrics.density).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
+        setContentView(ClassicAccountLoginCompose.createView(
+            context,
+            account.username,
+            state,
+            ::logIn,
+            {
+                failed.run()
+                dismiss()
             }
-        }
+        ), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    private fun logIn() {
-        val password = binding.password.text?.toString().orEmpty()
+    private fun logIn(password: String) {
         if (password.isEmpty()) {
-            binding.password.error = context.getString(R.string.input_hint_not_empty)
+            state.setError(context.getString(R.string.input_hint_not_empty))
             return
         }
-        binding.login.isEnabled = false
-        binding.cancel.isEnabled = false
+        state.setEnabled(false)
+        state.setError(null)
         Task.supplyAsync { account.logInWithPassword(password) }
             .whenComplete(Schedulers.androidUIThread()) { authInfo, exception ->
                 if (exception == null) {
@@ -65,8 +61,7 @@ class ClassicAccountLoginDialog(
                         setCancelable(false)
                         setNegativeButton(context.getString(R.string.dialog_positive), null)
                     }.create().show()
-                    binding.login.isEnabled = true
-                    binding.cancel.isEnabled = true
+                    state.setEnabled(true)
                 }
             }.start()
     }

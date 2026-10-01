@@ -14,6 +14,7 @@ import android.widget.RelativeLayout;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.compose.ui.platform.ComposeView;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.appcompat.widget.LinearLayoutCompat;
 
@@ -37,6 +38,8 @@ import com.tungsten.fcllibrary.component.view.FCLImageView;
 import com.tungsten.fcllibrary.component.view.FCLLinearLayout;
 import com.tungsten.fcllibrary.component.view.FCLProgressBar;
 import com.tungsten.fcllibrary.component.view.FCLTextView;
+import com.tungsten.fcl.control.InviteCodeInputCompose;
+import com.tungsten.fcl.control.InviteCodeInputState;
 
 import net.burningtnt.terracotta.TerracottaAndroidAPI;
 
@@ -303,73 +306,25 @@ public class MultiplayerDialog extends FCLDialog implements View.OnClickListener
                 void onPositive(String code);
             }
 
-            private final FCLEditText editCode;
-            private final FCLTextView validation;
+            private final InviteCodeInputState state = new InviteCodeInputState();
 
             public InviteCodeInputDialog(Context context, Listener listener) {
                 super(context);
                 setCancelable(false);
-                setContentView(R.layout.dialog_input_invite_code);
-
-                editCode = findViewById(R.id.code);
-                validation = findViewById(R.id.validation);
-                Objects.requireNonNull(editCode).addTextChangedListener(new TextWatcher() {
-                    @Override
-                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-                        // Ignore
-                    }
-
-                    @Override
-                    public void onTextChanged(CharSequence s, int start, int before, int count) {
-                        refreshTextBox();
-                    }
-
-                    @Override
-                    public void afterTextChanged(Editable s) {
-                        refreshTextBox();
-                    }
-                });
-                Objects.requireNonNull(validation).setVisibility(View.GONE);
-
-                FCLButton positive = findViewById(R.id.positive);
-                Objects.requireNonNull(positive).setOnClickListener(v -> {
-                    if (Terracotta.parseRoomCode(editCode.getText().toString()) != null) {
-                        listener.onPositive(editCode.getText().toString());
-                        InviteCodeInputDialog.this.dismiss();
-                    } else
-                        Toast.makeText(getContext(), getContext().getString(R.string.terracotta_status_waiting_guest_prompt_invalid), Toast.LENGTH_SHORT).show();
-                });
-                FCLButton negative = findViewById(R.id.negative);
-                Objects.requireNonNull(negative).setOnClickListener(v -> dismiss());
+                ComposeView composeView = InviteCodeInputCompose.createView(
+                        context,
+                        state,
+                        listener::onPositive,
+                        this::dismiss,
+                        () -> Toast.makeText(getContext(), getContext().getString(R.string.terracotta_status_waiting_guest_prompt_invalid), Toast.LENGTH_SHORT).show()
+                );
+                setContentView(composeView);
             }
 
             @Override
             public void show() {
                 super.show();
-                editCode.setText("");
-            }
-
-            private void refreshTextBox() {
-                TerracottaAndroidAPI.RoomType type = Terracotta.parseRoomCode(editCode.getText().toString());
-                if (editCode.getText().toString().isEmpty()) {
-                    Objects.requireNonNull(validation).setVisibility(View.GONE);
-                } else if (type == TerracottaAndroidAPI.RoomType.TERRACOTTA_LEGACY) {
-                    Objects.requireNonNull(validation).setVisibility(View.VISIBLE);
-                    Objects.requireNonNull(validation).setText(getContext().getString(R.string.terracotta_status_waiting_guest_prompt_terracotta_legacy));
-                    Objects.requireNonNull(validation).setTextColor(Color.YELLOW);
-                } else if (type == TerracottaAndroidAPI.RoomType.PCL2CE) {
-                    Objects.requireNonNull(validation).setVisibility(View.VISIBLE);
-                    Objects.requireNonNull(validation).setText(getContext().getString(R.string.terracotta_status_waiting_guest_prompt_pcl2ce));
-                    Objects.requireNonNull(validation).setTextColor(Color.YELLOW);
-                } else if (type == TerracottaAndroidAPI.RoomType.SCAFFOLDING) {
-                    Objects.requireNonNull(validation).setVisibility(View.VISIBLE);
-                    Objects.requireNonNull(validation).setText(getContext().getString(R.string.terracotta_status_waiting_guest_prompt_scaffolding));
-                    Objects.requireNonNull(validation).setTextColor(Color.GREEN);
-                } else {
-                    Objects.requireNonNull(validation).setVisibility(View.VISIBLE);
-                    Objects.requireNonNull(validation).setText(getContext().getString(R.string.terracotta_status_waiting_guest_prompt_invalid));
-                    Objects.requireNonNull(validation).setTextColor(Color.RED);
-                }
+                state.reset()
             }
         }
     }

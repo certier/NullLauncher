@@ -10,20 +10,31 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
 import androidx.core.app.ActivityOptionsCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.fragment.app.FragmentContainerView
 import androidx.lifecycle.lifecycleScope
 import com.mio.JavaManager
 import com.mio.manager.RendererManager
-import com.mio.util.ImageUtil
 import com.mio.util.getFileName
 import com.mio.util.getSystemDnsServerAddresses
 import com.tungsten.fcl.R
-import com.tungsten.fcl.databinding.ActivitySplashBinding
 import com.tungsten.fcl.fragment.EulaFragment
 import com.tungsten.fcl.fragment.RuntimeFragment
 import com.tungsten.fcl.setting.ConfigHolder
@@ -34,6 +45,7 @@ import com.tungsten.fclcore.util.Logging
 import com.tungsten.fclcore.util.io.FileUtils
 import com.tungsten.fcllibrary.component.FCLActivity
 import com.tungsten.fcllibrary.component.dialog.FCLAlertDialog
+import com.tungsten.fcllibrary.component.theme.FCLComposeTheme
 import com.tungsten.fcllibrary.component.theme.ThemeEngine
 import com.tungsten.fcllibrary.util.LocaleUtils
 import kotlinx.coroutines.Dispatchers
@@ -56,18 +68,22 @@ class SplashActivity : FCLActivity() {
     var java21: Boolean = false
     var java25: Boolean = false
     var jna: Boolean = false
-    lateinit var binding: ActivitySplashBinding
+    private val fragmentContainerId = android.view.View.generateViewId()
+    private lateinit var composeRoot: ComposeView
     private lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installSplashScreen()
-        binding = ActivitySplashBinding.inflate(layoutInflater)
+        composeRoot = ComposeView(this).apply {
+            setContent {
+                FCLComposeTheme {
+                    SplashContent(fragmentContainerId)
+                }
+            }
+        }
         sharedPreferences = getSharedPreferences("launcher", MODE_PRIVATE)
-        setContentView(binding.root)
-        ImageUtil.loadInto(
-            binding.background, ThemeEngine.getInstance().getTheme().getBackground(this)
-        )
+        setContentView(composeRoot)
         if (sharedPreferences.getBoolean("isAgree", false)) {
             checkPermission()
         } else {
@@ -120,11 +136,11 @@ class SplashActivity : FCLActivity() {
         if (sharedPreferences.getBoolean("isFirstLaunch", true)) {
             supportFragmentManager.beginTransaction()
                 .setCustomAnimations(R.anim.frag_start_anim, R.anim.frag_stop_anim)
-                .replace(R.id.fragment, EulaFragment::class.java, null).commitAllowingStateLoss()
+                .replace(fragmentContainerId, EulaFragment::class.java, null).commitAllowingStateLoss()
         } else {
             supportFragmentManager.beginTransaction()
                 .setCustomAnimations(R.anim.frag_start_anim, R.anim.frag_stop_anim)
-                .replace(R.id.fragment, RuntimeFragment::class.java, null)
+                .replace(fragmentContainerId, RuntimeFragment::class.java, null)
                 .commitAllowingStateLoss()
         }
     }
@@ -282,5 +298,27 @@ class SplashActivity : FCLActivity() {
         } catch (e: IOException) {
             e.printStackTrace()
         }
+    }
+}
+
+@Composable
+private fun SplashContent(fragmentContainerId: Int) {
+    val context = LocalContext.current
+    val themeData by ThemeEngine.theme.collectAsState()
+    Box(Modifier.fillMaxSize()) {
+        themeData?.getBackground(context)?.bitmap?.asImageBitmap()?.let { background ->
+            Image(
+                bitmap = background,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.FillBounds
+            )
+        }
+        AndroidView(
+            factory = { viewContext ->
+                FragmentContainerView(viewContext).apply { id = fragmentContainerId }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }

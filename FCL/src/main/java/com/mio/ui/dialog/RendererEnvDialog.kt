@@ -2,150 +2,181 @@ package com.mio.ui.dialog
 
 import android.content.Context
 import android.graphics.Point
-import android.view.Gravity
-import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.LinearLayout
-import androidx.core.content.ContextCompat
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
 import com.mio.plugin.RendererPlugin.EnvSpec
 import com.mio.plugin.RendererPlugin.EnvType
 import com.mio.plugin.RendererPlugin.EnvValue
 import com.tungsten.fcl.R
-import com.tungsten.fcl.databinding.DialogRendererEnvBinding
 import com.tungsten.fcllibrary.component.dialog.FCLDialog
-import com.tungsten.fcllibrary.component.view.FCLEditText
-import com.tungsten.fcllibrary.component.view.FCLSpinner
-import com.tungsten.fcllibrary.component.view.FCLSwitch
-import com.tungsten.fcllibrary.component.view.FCLTextView
-import com.tungsten.fcllibrary.util.ConvertUtils
+import com.tungsten.fcllibrary.component.theme.FCLComposeTheme
 
-/**
- * v2 渲染器插件的可配置环境变量编辑对话框：
- * selectable → 选项 Spinner（check 非 null 时附带启用开关），
- * customizable → 输入框（留空不启用），toggleable → 开关。
- * 确定时全量回传所有可配置项的当前值。
- */
+/** Configure selectable, customizable, and toggleable renderer environment values. */
 class RendererEnvDialog(
     context: Context,
     title: String,
     private val specs: List<EnvSpec>,
-    private val onConfirm: (Map<String, EnvValue>) -> Unit,
+    private val onConfirm: (Map<String, EnvValue>) -> Unit
 ) : FCLDialog(context) {
-
-    private val binding = DialogRendererEnvBinding.inflate(layoutInflater)
-
-    private val switches = mutableMapOf<String, FCLSwitch>()
-    private val spinners = mutableMapOf<String, FCLSpinner<String>>()
-    private val inputs = mutableMapOf<String, FCLEditText>()
-
     init {
         val point = Point()
         window?.windowManager?.defaultDisplay?.getSize(point)
         val params = window?.attributes
-        params?.width = ConvertUtils.dip2px(context, 500f)
-        val ratio = point.x.toFloat() / point.y.toFloat()
-        if (ratio >= 1.5f) {
-            params?.height = WindowManager.LayoutParams.MATCH_PARENT
+        params?.width = (500 * context.resources.displayMetrics.density).toInt()
+        params?.height = if (point.x.toFloat() / point.y.toFloat() >= 1.5f) {
+            WindowManager.LayoutParams.MATCH_PARENT
         } else {
-            params?.height = point.y * 1 / 2
+            point.y / 2
         }
         window?.attributes = params
-
-        setContentView(binding.root)
-        binding.title.text = title
-        specs.forEach { binding.envContainer.addView(buildRow(it)) }
-        binding.ok.setOnClickListener { submit() }
-        binding.cancel.setOnClickListener { dismiss() }
+        setContentView(RendererEnvCompose.createView(context, title, specs, onConfirm, this::dismiss))
     }
+}
 
-    private fun buildRow(spec: EnvSpec): LinearLayout {
-        val density = context.resources.displayMetrics.density
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, (8 * density).toInt(), 0, 0)
-        }
-        val header = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val label = FCLTextView(context).apply {
-            text = spec.title
-            textSize = 15f
-            // 对话框是普通白/浅底，用主题默认文字色（autoTint 是与主色对比的黑/白，主色偏深时为白色，会看不清）
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        header.addView(label)
-
-        when (spec.type) {
-            EnvType.SELECTABLE -> {
-                if (spec.checkable) {
-                    header.addView(FCLSwitch(context).apply {
-                        isChecked = spec.enabled
-                        switches[spec.key] = this
-                    })
-                }
-                val spinner = FCLSpinner<String>(context).apply {
-                    // 对话框恒浅底（dialog_background），关闭 autoTint（深色模式下其残留
-                    // 白色对比色会与浅底同色）并显式使用固定深色文字
-                    setAutoTextTint(false)
-                    setTextColor(ContextCompat.getColor(context, R.color.primary_text))
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { topMargin = (4 * density).toInt() }
-                    setItems(spec.options)
-                    setSelection(spec.options.indexOf(spec.value).coerceAtLeast(0))
-                    spinners[spec.key] = this
-                }
-                row.addView(header)
-                row.addView(spinner)
-            }
-
-            EnvType.CUSTOMIZABLE -> {
-                val input = FCLEditText(context).apply {
-                    hint = spec.defaultValue
-                    setText(spec.value)
-                    maxLines = 1
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { topMargin = (4 * density).toInt() }
-                    inputs[spec.key] = this
-                }
-                row.addView(header)
-                row.addView(input)
-            }
-
-            EnvType.TOGGLEABLE -> {
-                header.addView(FCLSwitch(context).apply {
-                    isChecked = spec.enabled
-                    switches[spec.key] = this
-                })
-                row.addView(header)
+private object RendererEnvCompose {
+    fun createView(
+        context: Context,
+        title: String,
+        specs: List<EnvSpec>,
+        onConfirm: (Map<String, EnvValue>) -> Unit,
+        onDismiss: Runnable
+    ): ComposeView = ComposeView(context).apply {
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+        setContent {
+            FCLComposeTheme {
+                RendererEnvContent(title, specs, onConfirm, onDismiss)
             }
         }
-        return row
     }
+}
 
-    private fun submit() {
-        val result = mutableMapOf<String, EnvValue>()
-        specs.forEach { spec ->
-            when (spec.type) {
-                EnvType.SELECTABLE -> result[spec.key] = EnvValue(
-                    enabled = switches[spec.key]?.isChecked,
-                    value = spinners[spec.key]?.getSelectedItem()
-                )
+@Composable
+private fun RendererEnvContent(
+    title: String,
+    specs: List<EnvSpec>,
+    onConfirm: (Map<String, EnvValue>) -> Unit,
+    onDismiss: Runnable
+) {
+    val context = LocalContext.current
+    val enabledValues = remember(specs) {
+        mutableStateMapOf<String, Boolean>().apply { specs.forEach { put(it.key, it.enabled) } }
+    }
+    val textValues = remember(specs) {
+        mutableStateMapOf<String, String>().apply { specs.forEach { put(it.key, it.value) } }
+    }
+    var selectedValues by remember(specs) {
+        mutableStateOf(specs.associate { it.key to it.value })
+    }
+    var expandedKey by remember { mutableStateOf<String?>(null) }
 
-                EnvType.CUSTOMIZABLE -> result[spec.key] = EnvValue(
-                    value = inputs[spec.key]?.text?.toString().orEmpty()
-                )
-
-                EnvType.TOGGLEABLE -> result[spec.key] = EnvValue(
-                    enabled = switches[spec.key]?.isChecked
-                )
+    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            specs.forEach { spec ->
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(spec.title, modifier = Modifier.weight(1f))
+                        when (spec.type) {
+                            EnvType.SELECTABLE -> if (spec.checkable) {
+                                Switch(
+                                    checked = enabledValues[spec.key] ?: false,
+                                    onCheckedChange = { enabledValues[spec.key] = it }
+                                )
+                            }
+                            EnvType.TOGGLEABLE -> Switch(
+                                checked = enabledValues[spec.key] ?: false,
+                                onCheckedChange = { enabledValues[spec.key] = it }
+                            )
+                            EnvType.CUSTOMIZABLE -> Unit
+                        }
+                    }
+                    when (spec.type) {
+                        EnvType.SELECTABLE -> {
+                            if (spec.options.isNotEmpty()) {
+                                TextButton(onClick = { expandedKey = spec.key }) {
+                                    Text(selectedValues[spec.key].orEmpty())
+                                }
+                                DropdownMenu(
+                                    expanded = expandedKey == spec.key,
+                                    onDismissRequest = { expandedKey = null }
+                                ) {
+                                    spec.options.forEach { option ->
+                                        DropdownMenuItem(
+                                            text = { Text(option) },
+                                            onClick = {
+                                                selectedValues = selectedValues + (spec.key to option)
+                                                expandedKey = null
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        EnvType.CUSTOMIZABLE -> OutlinedTextField(
+                            value = textValues[spec.key].orEmpty(),
+                            onValueChange = { textValues[spec.key] = it },
+                            placeholder = { spec.defaultValue?.let { Text(it) } },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        EnvType.TOGGLEABLE -> Unit
+                    }
+                }
             }
         }
-        onConfirm(result)
-        dismiss()
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onDismiss::run) {
+                Text(context.getString(R.string.button_cancel))
+            }
+            Button(
+                onClick = {
+                    val result = specs.associate { spec ->
+                        spec.key to when (spec.type) {
+                            EnvType.SELECTABLE -> EnvValue(
+                                enabled = if (spec.checkable) enabledValues[spec.key] else null,
+                                value = selectedValues[spec.key]
+                            )
+                            EnvType.CUSTOMIZABLE -> EnvValue(value = textValues[spec.key].orEmpty())
+                            EnvType.TOGGLEABLE -> EnvValue(enabled = enabledValues[spec.key])
+                        }
+                    }
+                    onConfirm(result)
+                    onDismiss.run()
+                },
+                modifier = Modifier.padding(start = 8.dp)
+            ) {
+                Text(context.getString(R.string.dialog_positive))
+            }
+        }
     }
 }

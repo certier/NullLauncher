@@ -1,33 +1,28 @@
 package com.tungsten.fcl.control;
 
 import android.content.Context;
-import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.compose.ui.platform.ComposeView;
 
 import com.tungsten.fcl.R;
 import com.tungsten.fcl.control.data.ControlViewGroup;
 import com.tungsten.fclcore.util.StringUtils;
 import com.tungsten.fcllibrary.component.dialog.FCLDialog;
-import com.tungsten.fcllibrary.component.view.FCLButton;
-import com.tungsten.fcllibrary.component.view.FCLEditText;
-import com.tungsten.fcllibrary.component.view.FCLSpinner;
 
 import java.util.ArrayList;
 import java.util.Objects;
 
-public class EditViewGroupDialog extends FCLDialog implements View.OnClickListener {
+public class EditViewGroupDialog extends FCLDialog {
 
     private final GameMenu menu;
     private final ControlViewGroup viewGroup;
     private final Callback callback;
 
-    private FCLEditText editText;
-    private FCLSpinner<String> visibilitySpinner;
-
-    private FCLButton positive;
-    private FCLButton negative;
+    private final EditViewGroupDialogState state;
 
     public interface Callback {
         void onPositive(String name, ControlViewGroup.Visibility visibility);
@@ -39,38 +34,22 @@ public class EditViewGroupDialog extends FCLDialog implements View.OnClickListen
         this.viewGroup = viewGroup;
         this.callback = callback;
         setCancelable(false);
-        setContentView(R.layout.dialog_edit_view_group);
-
-        editText = findViewById(R.id.name);
-        visibilitySpinner = findViewById(R.id.visibility);
-        ArrayList<String> visibilityString = new ArrayList<>();
-        visibilityString.add(getContext().getString(R.string.menu_control_view_group_visible));
-        visibilityString.add(getContext().getString(R.string.menu_control_view_group_invisible));
-        visibilitySpinner.setItems(visibilityString);
-
-        editText.setText(viewGroup.getName());
-        visibilitySpinner.setSelection(viewGroup.getVisibility() == ControlViewGroup.Visibility.VISIBLE ? 0 : 1);
-
-        positive = findViewById(R.id.positive);
-        negative = findViewById(R.id.negative);
-        positive.setOnClickListener(this);
-        negative.setOnClickListener(this);
+        state = new EditViewGroupDialogState(viewGroup.getName(),
+                viewGroup.getVisibility() == ControlViewGroup.Visibility.VISIBLE);
+        setContentView(EditViewGroupDialogCompose.createView(getContext(), state, this::submit, this::dismiss),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        getWindow().setLayout((int) (400 * context.getResources().getDisplayMetrics().density), WindowManager.LayoutParams.WRAP_CONTENT);
     }
 
-    @Override
-    public void onClick(View v) {
-        if (v == positive) {
-            if (menu.getController().viewGroups().stream().anyMatch(it -> it.getName().equals(Objects.requireNonNull(editText.getText()).toString()) && !viewGroup.getName().equals(editText.getText().toString()))) {
-                Toast.makeText(getContext(), getContext().getString(R.string.menu_control_view_group_exist), Toast.LENGTH_SHORT).show();
-            } else if (StringUtils.isBlank(Objects.requireNonNull(editText.getText()).toString())) {
-                Toast.makeText(getContext(), getContext().getString(R.string.menu_control_view_group_empty), Toast.LENGTH_SHORT).show();
-            } else {
-                dismiss();
-                callback.onPositive(editText.getText().toString(), visibilitySpinner.getSelectedIndex() == 0 ? ControlViewGroup.Visibility.VISIBLE : ControlViewGroup.Visibility.INVISIBLE);
-            }
-        }
-        if (v == negative) {
+    private void submit() {
+        String name = state.getName();
+        if (menu.getController().viewGroups().stream().anyMatch(it -> it.getName().equals(name) && !viewGroup.getName().equals(name))) {
+            Toast.makeText(getContext(), getContext().getString(R.string.menu_control_view_group_exist), Toast.LENGTH_SHORT).show();
+        } else if (StringUtils.isBlank(name)) {
+            Toast.makeText(getContext(), getContext().getString(R.string.menu_control_view_group_empty), Toast.LENGTH_SHORT).show();
+        } else {
             dismiss();
+            callback.onPositive(name, state.getVisible() ? ControlViewGroup.Visibility.VISIBLE : ControlViewGroup.Visibility.INVISIBLE);
         }
     }
 }

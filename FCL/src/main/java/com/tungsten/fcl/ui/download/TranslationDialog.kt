@@ -1,110 +1,119 @@
 package com.tungsten.fcl.ui.download
 
-import android.annotation.SuppressLint
 import android.content.Context
-import android.text.Editable
-import android.text.TextWatcher
-import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.tungsten.fcl.R
-import com.tungsten.fcl.databinding.DialogTranslationBinding
-import com.tungsten.fcl.databinding.ItemTranslationBinding
 import com.tungsten.fcl.util.ModTranslations
 import com.tungsten.fclcore.mod.RemoteModRepository
 import com.tungsten.fcllibrary.component.dialog.FCLDialog
-import com.tungsten.fcllibrary.component.view.FCLEditText
-import com.tungsten.fcllibrary.util.ConvertUtils
+import com.tungsten.fcllibrary.component.theme.FCLComposeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class TranslationDialog(
     context: Context,
-    repository: RemoteModRepository,
-    callback: (String) -> Unit
+    private val repository: RemoteModRepository,
+    private val callback: (String) -> Unit
 ) : FCLDialog(context) {
-    private var name: FCLEditText
-    private var recyclerView: RecyclerView
-    private var adapter: TranslationAdapter
+    private val results = mutableStateListOf<ModTranslations.Mod>()
 
     init {
-        window?.setLayout(ConvertUtils.dip2px(context, 500f), ViewGroup.LayoutParams.MATCH_PARENT)
-        val binding = DialogTranslationBinding.inflate(LayoutInflater.from(context))
-        setContentView(binding.root)
-        name = binding.name
-        recyclerView = binding.recyclerView
-        recyclerView.layoutManager = LinearLayoutManager(context)
-        val newCallback: (String) -> Unit = {
-            dismiss()
-            callback(it)
-        }
-        adapter = TranslationAdapter(context, mutableListOf(), newCallback)
-        recyclerView.adapter = adapter
-        binding.cancel.setOnClickListener { dismiss() }
-        name.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(
-                s: CharSequence?,
-                start: Int,
-                before: Int,
-                count: Int
-            ) {
-            }
-
-            override fun afterTextChanged(editable: Editable?) {
-                lifecycleScope.launch(Dispatchers.Default) {
-                    val str = runCatching {
-                        editable?.toString()
-                    }.getOrNull() ?: return@launch
-                    val mods = ModTranslations.getTranslationsByRepositoryType(repository.type)
-                        .searchMod(str)
-                    withContext(Dispatchers.Main) {
-                        adapter.update(mods)
-                    }
+        window?.setLayout((500 * context.resources.displayMetrics.density).toInt(), WindowManager.LayoutParams.MATCH_PARENT)
+        setContentView(ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+            setContent {
+                FCLComposeTheme {
+                    TranslationContent(
+                        results = results,
+                        onSearch = ::search,
+                        onSelect = { mod ->
+                            dismiss()
+                            callback(mod.subname().ifEmpty { mod.abbr() })
+                        },
+                        onDismiss = ::dismiss
+                    )
                 }
             }
-        })
+        }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     }
 
-    inner class TranslationAdapter(
-        val context: Context,
-        private val translationList: MutableList<ModTranslations.Mod>,
-        val callback: (String) -> Unit
-    ) :
-        RecyclerView.Adapter<TranslationAdapter.TranslationViewHolder>() {
-
-        inner class TranslationViewHolder(view: View) :
-            RecyclerView.ViewHolder(view)
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TranslationViewHolder {
-            return TranslationViewHolder(
-                LayoutInflater.from(context).inflate(R.layout.item_translation, parent, false)
-            )
+    private fun search(query: String) {
+        lifecycleScope.launch {
+            val matches = withContext(Dispatchers.Default) {
+                runCatching {
+                    ModTranslations.getTranslationsByRepositoryType(repository.type).searchMod(query)
+                }.getOrDefault(emptyList())
+            }
+            results.clear()
+            results.addAll(matches)
         }
+    }
+}
 
-        override fun getItemCount(): Int {
-            return translationList.size
-        }
-
-        @SuppressLint("SetTextI18n")
-        override fun onBindViewHolder(holder: TranslationViewHolder, position: Int) {
-            val binding = ItemTranslationBinding.bind(holder.itemView)
-            val mod = translationList[position]
-            binding.text.text = "${mod.name()} ${mod.subname()} ${mod.abbr()}"
-            binding.root.setOnClickListener {
-                callback(mod.subname().ifEmpty { mod.abbr() })
+@Composable
+private fun TranslationContent(
+    results: List<ModTranslations.Mod>,
+    onSearch: (String) -> Unit,
+    onSelect: (ModTranslations.Mod) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var query by remember { androidx.compose.runtime.mutableStateOf("") }
+    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+        Text("模组/整合包对应英文查询", style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(
+            value = query,
+            onValueChange = {
+                query = it
+                onSearch(it)
+            },
+            label = { Text(context.getString(com.tungsten.fcl.R.string.search)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(results) { mod ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { onSelect(mod) },
+                    shape = RoundedCornerShape(4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Text(
+                        text = "${mod.name()} ${mod.subname()} ${mod.abbr()}",
+                        modifier = Modifier.padding(10.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
-
-        @SuppressLint("NotifyDataSetChanged")
-        fun update(translationList: List<ModTranslations.Mod>) {
-            this.translationList.clear()
-            this.translationList.addAll(translationList)
-            notifyDataSetChanged()
+        androidx.compose.material3.TextButton(onClick = onDismiss, modifier = Modifier.align(androidx.compose.ui.Alignment.End)) {
+            Text(context.getString(com.tungsten.fcl.R.string.button_cancel))
         }
     }
 }

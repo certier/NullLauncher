@@ -2,10 +2,12 @@ package com.tungsten.fcl.ui.version;
 
 import android.content.Context;
 import com.tungsten.fcl.ui.UIManager;
-import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.compose.ui.platform.ComposeView;
 
 import com.tungsten.fcl.R;
 import com.tungsten.fcl.activity.MainActivity;
@@ -13,55 +15,44 @@ import com.tungsten.fcl.setting.Profile;
 import com.tungsten.fcl.setting.Profiles;
 import com.tungsten.fclcore.util.StringUtils;
 import com.tungsten.fcllibrary.component.dialog.FCLDialog;
-import com.tungsten.fcllibrary.component.view.FCLButton;
-import com.tungsten.fcllibrary.component.view.FCLEditText;
-import com.tungsten.fcllibrary.component.view.FCLImageButton;
-import com.tungsten.fcllibrary.component.view.FCLTextView;
 
 import java.io.File;
 
-public class AddProfileDialog extends FCLDialog implements View.OnClickListener {
+public class AddProfileDialog extends FCLDialog {
 
-    private final FCLEditText editText;
-    private final FCLTextView pathText;
-    private final FCLImageButton editPath;
-    private final FCLButton positive;
-    private final FCLButton negative;
+    private final AddProfileDialogState state;
 
     public AddProfileDialog(@NonNull Context context) {
         super(context);
-        setContentView(R.layout.dialog_add_profile);
         setCancelable(false);
-        editText = findViewById(R.id.name);
-        pathText = findViewById(R.id.path);
-        editPath = findViewById(R.id.edit);
-        positive = findViewById(R.id.positive);
-        negative = findViewById(R.id.negative);
-        editPath.setOnClickListener(this);
-        positive.setOnClickListener(this);
-        negative.setOnClickListener(this);
+        state = new AddProfileDialogState();
+        ComposeView composeView = AddProfileDialogCompose.createView(
+                context,
+                state,
+                this::choosePath,
+                this::createProfile,
+                this::dismiss
+        );
+        setContentView(composeView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        getWindow().setLayout((int) (400 * context.getResources().getDisplayMetrics().density), WindowManager.LayoutParams.WRAP_CONTENT);
     }
 
-    @Override
-    public void onClick(View view) {
-        if (view == editPath) {
-            MainActivity.getInstance().fileLauncher.launchSingleSelection(null, null, true, files -> {
-                if (files == null) return;
-                pathText.setText(files.get(0).getPath());
-            });
-        }
-        if (view == positive) {
-            if (StringUtils.isBlank(editText.getText().toString()) || StringUtils.isBlank(pathText.getText().toString())) {
-                Toast.makeText(getContext(), getContext().getString(R.string.input_not_empty), Toast.LENGTH_SHORT).show();
-            } else if (Profiles.getProfiles().stream().anyMatch(profile -> profile.getName().equals(editText.getText().toString()))) {
-                Toast.makeText(getContext(), getContext().getString(R.string.profile_already_exist), Toast.LENGTH_SHORT).show();
-            } else {
-                Profiles.addProfile(new Profile(editText.getText().toString(), new File(pathText.getText().toString())));
-                ((VersionListPage) UIManager.getInstance().getVersionUI().getPage(0)).refreshProfile();
-                dismiss();
-            }
-        }
-        if (view == negative) {
+    private void choosePath() {
+        MainActivity.getInstance().fileLauncher.launchSingleSelection(null, null, true, files -> {
+            if (files != null) state.setPath(files.get(0).getPath());
+        });
+    }
+
+    private void createProfile() {
+        String name = state.getName();
+        String path = state.getPath();
+        if (StringUtils.isBlank(name) || StringUtils.isBlank(path)) {
+            Toast.makeText(getContext(), getContext().getString(R.string.input_not_empty), Toast.LENGTH_SHORT).show();
+        } else if (Profiles.getProfiles().stream().anyMatch(profile -> profile.getName().equals(name))) {
+            Toast.makeText(getContext(), getContext().getString(R.string.profile_already_exist), Toast.LENGTH_SHORT).show();
+        } else {
+            Profiles.addProfile(new Profile(name, new File(path)));
+            ((VersionListPage) UIManager.getInstance().getVersionUI().getPage(0)).refreshProfile();
             dismiss();
         }
     }

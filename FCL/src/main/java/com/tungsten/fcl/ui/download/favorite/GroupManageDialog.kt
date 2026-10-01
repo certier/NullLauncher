@@ -1,51 +1,74 @@
 package com.tungsten.fcl.ui.download.favorite
 
 import android.content.Context
-import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Toast
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.mio.data.FavoriteManager
 import com.mio.data.favorite.FavoriteGroupEntity
-import com.mio.ui.adapter.SpacingItemDecoration
-import com.mio.ui.applySelectableItemStyle
 import com.tungsten.fcl.R
 import com.tungsten.fcl.activity.MainActivity
-import com.tungsten.fcl.databinding.DialogGroupManageBinding
-import com.tungsten.fcl.databinding.DialogGroupManageItemBinding
 import com.tungsten.fcllibrary.component.dialog.EditDialog
 import com.tungsten.fcllibrary.component.dialog.FCLAlertDialog
 import com.tungsten.fcllibrary.component.dialog.FCLDialog
-import com.tungsten.fcllibrary.util.ConvertUtils
+import com.tungsten.fcllibrary.component.theme.FCLComposeTheme
 import kotlinx.coroutines.launch
 
-/**
- * 分组管理对话框：新建、重命名、删除分组；删除仅摘除收藏条目上的分组标记，不取消收藏。
- * 行样式与渲染器选择对话框统一（DialogCard 背景 + 行间 10dp 间距）。
- */
+/** Manage favorite groups without changing the favorite membership of their items. */
 class GroupManageDialog(context: Context) : FCLDialog(context) {
-
-    private val binding: DialogGroupManageBinding = DialogGroupManageBinding.inflate(layoutInflater)
-    private val adapter = GroupManageAdapter(context)
+    private var groups by mutableStateOf(FavoriteManager.groups.value)
 
     init {
         setCancelable(true)
-        window?.setLayout(ConvertUtils.dip2px(context, 400f), ViewGroup.LayoutParams.WRAP_CONTENT)
-        setContentView(binding.root)
-        binding.negative.setOnClickListener { dismiss() }
-        binding.btnNew.setOnClickListener { showNewGroupDialog() }
-        binding.listContainer.layoutManager = LinearLayoutManager(context)
-        binding.listContainer.addItemDecoration(SpacingItemDecoration(ConvertUtils.dip2px(context, 10f)))
-        binding.listContainer.adapter = adapter
+        window?.setLayout((400 * context.resources.displayMetrics.density).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
+        setContentView(ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+            setContent {
+                FCLComposeTheme {
+                    GroupManageContent(
+                        groups = groups,
+                        onNew = ::showNewGroupDialog,
+                        onRename = ::showRenameDialog,
+                        onDelete = ::showDeleteConfirm,
+                        onDismiss = ::dismiss
+                    )
+                }
+            }
+        }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         refresh()
     }
 
     private fun refresh() {
-        adapter.notifyDataSetChanged()
-        binding.hint.visibility = if (FavoriteManager.groups.value.isEmpty()) View.VISIBLE else View.GONE
+        groups = FavoriteManager.groups.value.toList()
     }
 
     private fun showNewGroupDialog() {
@@ -87,25 +110,59 @@ class GroupManageDialog(context: Context) : FCLDialog(context) {
             .create()
             .show()
     }
+}
 
-    /** 分组管理行：名称 + 重命名/删除按钮，行样式经 applySelectableItemStyle 与其他选择对话框统一 */
-    private inner class GroupManageAdapter(val context: Context) :
-        RecyclerView.Adapter<GroupManageAdapter.Holder>() {
-
-        inner class Holder(val binding: DialogGroupManageItemBinding) : RecyclerView.ViewHolder(binding.root)
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder =
-            Holder(DialogGroupManageItemBinding.inflate(LayoutInflater.from(context), parent, false))
-
-        override fun onBindViewHolder(holder: Holder, position: Int) {
-            val group = FavoriteManager.groups.value[position]
-            // 行样式与渲染器选择对话框统一：DialogCard 背景（管理列表无选中态）
-            applySelectableItemStyle(context, holder.binding.root, null, false, context.resources.displayMetrics.density)
-            holder.binding.name.text = group.name
-            holder.binding.btnRename.setOnClickListener { showRenameDialog(group) }
-            holder.binding.btnDelete.setOnClickListener { showDeleteConfirm(group) }
+@Composable
+private fun GroupManageContent(
+    groups: List<FavoriteGroupEntity>,
+    onNew: () -> Unit,
+    onRename: (FavoriteGroupEntity) -> Unit,
+    onDelete: (FavoriteGroupEntity) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+        Text(context.getString(R.string.favorite_group_manage), style = MaterialTheme.typography.titleLarge)
+        if (groups.isEmpty()) {
+            Text(context.getString(R.string.favorite_group_none), Modifier.padding(vertical = 10.dp))
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(groups, key = { it.groupId }) { group ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(4.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(group.name, modifier = Modifier.weight(1f), maxLines = 1)
+                            IconButton(onClick = { onRename(group) }) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_baseline_edit_24),
+                                    contentDescription = context.getString(R.string.favorite_group_rename)
+                                )
+                            }
+                            IconButton(onClick = { onDelete(group) }) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_baseline_delete_24),
+                                    contentDescription = context.getString(R.string.button_remove)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
-
-        override fun getItemCount(): Int = FavoriteManager.groups.value.size
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = onDismiss) { Text(context.getString(R.string.dialog_negative)) }
+            Button(onClick = onNew, shape = RoundedCornerShape(4.dp)) {
+                Text(context.getString(R.string.favorite_group_new))
+            }
+        }
     }
 }
